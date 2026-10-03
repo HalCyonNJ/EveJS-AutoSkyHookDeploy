@@ -1,0 +1,17 @@
+{
+  "_comment": "Copy to <EveJS root>/config/autoSkyHookDeploy.json - the installer creates it for you, and never overwrites it afterwards. Under Docker that directory is bind-mounted, so a change needs a container restart, never an image rebuild. Keys are the env var names from .env.example without the EVEJS_AUTO_SKYHOOK_DEPLOY_ prefix, and both spellings are accepted. The full list lives in config.js KEYS. A value that is present but has the wrong type, or is out of range, is a configuration problem: the loader then installs no hooks at all, logs the offending key, and the server behaves exactly like vanilla EveJS.",
+
+  "enabled": true,
+  "verbose": false,
+  "allowDeploy": true,
+  "allowRemove": true,
+  "maxPlanetsPerCommand": 64,
+  "regionCountdownSeconds": 15,
+  "regionStepDelayMs": 2000,
+  "offsetMeters": 25000,
+  "standoffMeters": 5000000,
+  "orbitMargin": 1.0,
+  "ownerMode": "corporation",
+  "requireClaimedSystemOwnership": false,
+  "includeDestroyedInStatus": true
+}

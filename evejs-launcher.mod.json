@@ -1,0 +1,178 @@
+{
+  "schemaVersion": 3,
+  "id": "autoSkyHookDeploy",
+  "displayName": "Auto Skyhook Deploy",
+  "version": "1.0.0",
+  "description": "Conjures Orbital Skyhooks (typeID 81080) onto every planet of a solar system that does not have one, and removes them again, without consuming an item, without a ship and without the caller being in the system. /ash anchor here|<systemID> deploys one Skyhook per free planet just past that planet's warp-in point - the single spot a warp to the planet always lands on, read from the game's own getClientParityWarpInPoint, offset further out (offsetMeters, default 5 km) so a ship warping in does not materialise inside the model, and changeable in game with /ash offset - falling back to a horizontal star-facing placement at the larger of a configurable standoff and one planet radius for bodies the game has no warp-in point for, and reports the split (deployed, already present, over a destroyed skyhook); /ash remove <skyhookID> destroys one Skyhook by id, refusing a bad, unknown or structure-shaped one with text and answering a repeat gracefully; /ash unanchor here|<systemID> destroys every Skyhook in a system; both run the vendor destruction sequence per id, report every id they processed, and re-sync the game's item-id counter once when it is behind the highest id in use; /ash offset reads or sets how far past the landing point a Skyhook goes (kilometres or metres), saving the value so it survives a restart without touching the installer's config file; /ash anchor|unanchor region <regionID> works a whole region and system <systemID> one system, respecting NPC/faction space through the game's own sovereignty rule (a single NPC system is refused; inside a region those systems are skipped and named); a region run is paced and abortable - a countdown (cancelled by /ash stop with nothing done), then one system at a time, each verified against what was written and reported, with a configurable gap between systems, and /ash stop ends a run after the system being worked has been verified; /ash align moves the Skyhooks already deployed onto the configured offset, paced like a region run; multi-system runs warn the operator to stay in game, estimate their own duration from measured per-planet cost and report the actual time against it; /ash status reads the system back per planet as live, free, or free over a destroyed tombstone; /ash help lists the command set. Every subcommand also works as !ash in ordinary chat, so a character without staff rights can drive it. A planet that already has a live Skyhook, a structure-shaped Skyhook or a sovereignty ledger row for a real deployment is never built on twice; the free slot a claimed system gives an empty planet is where the Skyhook goes, and a destroyed Skyhook does not block a replacement - its tombstone is kept as history and the new one gets its own id. A conjured row matches a launched one in every field the game reads, including spaceRadius. Server-side only; no client change. Also installable with the third-party EveJS Launcher (settings panel, update channel and helper included).",
+  "kind": "loader",
+  "supportedBackends": [
+    "native",
+    "docker"
+  ],
+  "activation": {
+    "strategy": "loader_rename"
+  },
+  "restart": "game_server",
+  "compatibility": {
+    "evejsVersions": [
+      "0.12.9"
+    ]
+  },
+  "settings": {
+    "schemaVersion": 1,
+    "files": [
+      {
+        "id": "settings",
+        "base": "mod",
+        "path": "settings.json",
+        "format": "json"
+      }
+    ],
+    "fields": [
+      {
+        "id": "offsetMeters",
+        "label": "Landing-point offset (m)",
+        "type": "number",
+        "default": 25000,
+        "restart": "game_server",
+        "file": "settings",
+        "key": ["offsetMeters"],
+        "minimum": 0,
+        "maximum": 100000
+      },
+      {
+        "id": "standoffMeters",
+        "label": "Fallback standoff beyond the surface (m)",
+        "type": "number",
+        "default": 5000000,
+        "restart": "game_server",
+        "file": "settings",
+        "key": ["standoffMeters"],
+        "minimum": 100000,
+        "maximum": 100000000
+      },
+      {
+        "id": "orbitMargin",
+        "label": "Fallback orbit margin (planet radii)",
+        "type": "number",
+        "default": 1.0,
+        "restart": "game_server",
+        "file": "settings",
+        "key": ["orbitMargin"],
+        "minimum": 0,
+        "maximum": 10
+      },
+      {
+        "id": "regionCountdownSeconds",
+        "label": "Region run countdown (seconds)",
+        "type": "number",
+        "default": 15,
+        "restart": "game_server",
+        "file": "settings",
+        "key": ["regionCountdownSeconds"],
+        "minimum": 0,
+        "maximum": 120
+      },
+      {
+        "id": "regionStepDelayMs",
+        "label": "Delay between region systems (ms)",
+        "type": "number",
+        "default": 2000,
+        "restart": "game_server",
+        "file": "settings",
+        "key": ["regionStepDelayMs"],
+        "minimum": 0,
+        "maximum": 60000
+      },
+      {
+        "id": "maxPlanetsPerCommand",
+        "label": "Maximum planets per system command",
+        "type": "number",
+        "default": 64,
+        "restart": "game_server",
+        "file": "settings",
+        "key": ["maxPlanetsPerCommand"],
+        "minimum": 1,
+        "maximum": 4096
+      },
+      {
+        "id": "allowDeploy",
+        "label": "Allow /ash anchor",
+        "type": "boolean",
+        "default": true,
+        "restart": "game_server",
+        "file": "settings",
+        "key": ["allowDeploy"]
+      },
+      {
+        "id": "allowRemove",
+        "label": "Allow /ash remove and /ash unanchor",
+        "type": "boolean",
+        "default": true,
+        "restart": "game_server",
+        "file": "settings",
+        "key": ["allowRemove"]
+      },
+      {
+        "id": "ownerMode",
+        "label": "Owner of a conjured Skyhook (corporation or character)",
+        "type": "string",
+        "default": "corporation",
+        "restart": "game_server",
+        "file": "settings",
+        "key": ["ownerMode"]
+      },
+      {
+        "id": "requireClaimedSystemOwnership",
+        "label": "Only work systems the caller's corporation or alliance holds",
+        "type": "boolean",
+        "default": false,
+        "restart": "game_server",
+        "file": "settings",
+        "key": ["requireClaimedSystemOwnership"]
+      },
+      {
+        "id": "includeDestroyedInStatus",
+        "label": "List destroyed tombstones in /ash status",
+        "type": "boolean",
+        "default": true,
+        "restart": "game_server",
+        "file": "settings",
+        "key": ["includeDestroyedInStatus"]
+      },
+      {
+        "id": "verbose",
+        "label": "Verbose server log",
+        "type": "boolean",
+        "default": false,
+        "restart": "game_server",
+        "file": "settings",
+        "key": ["verbose"],
+        "advanced": true
+      }
+    ]
+  },
+  "updates": {
+    "provider": "github",
+    "repository": "HalCyonNJ/EveJS-AutoSkyHookDeploy",
+    "asset": "EveJS-AutoSkyHookDeploy-{version}.zip",
+    "channel": "stable",
+    "tagPrefix": "v",
+    "preserveFiles": ["settings.json"]
+  },
+  "launcherApi": {
+    "version": 1,
+    "helper": {
+      "runtime": "node",
+      "path": "launcher/helper.js"
+    },
+    "capabilities": [
+      "install",
+      "verify",
+      "prepare_profile",
+      "prepare_disable",
+      "prepare_remove",
+      "recover"
+    ]
+  }
+}

@@ -1,0 +1,5 @@
+# Sources and docs are LF; the Windows batch files are -text so their bytes are
+# never rewritten on checkout (every .bat here is ASCII with CRLF).
+* text=auto eol=lf
+*.bat -text
+*.zip binary

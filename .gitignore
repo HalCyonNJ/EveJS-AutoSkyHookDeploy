@@ -1,0 +1,19 @@
+# Local settings. .env.example is the documented template and is published.
+.env
+
+# The release paste buffer, kept on this machine only - it is not something a
+# reader of the repository or an installed mod folder needs. The installer skips
+# it too (DEV_ONLY_FILES in installer/lib/deployment.js).
+ANNOUNCEMENT.md
+
+# Installer rollback snapshots
+_*backup*/
+
+# Installed dependencies
+node_modules/
+
+# Scratch
+*.log
+*.tmp
+.DS_Store
+Thumbs.db
