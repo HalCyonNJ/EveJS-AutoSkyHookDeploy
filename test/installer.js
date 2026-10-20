@@ -60,6 +60,25 @@ const START_SERVER_FIXTURE = [
   "",
 ].join("\r\n");
 
+// The 261018.1 build-context file: everything excluded, then an allowlist that
+// does not mention mods/.
+const DOCKERIGNORE_FIXTURE = [
+  "# The runtime image only needs these application trees.",
+  "**",
+  "!Dockerfile",
+  "!package.json",
+  "!config/",
+  "!config/**",
+  "!server/",
+  "!server/**",
+  "!docker/",
+  "!docker/**",
+  "",
+  "**/node_modules",
+  "**/node_modules/**",
+  "",
+].join("\n");
+
 function buildFixtureRoot(base) {
   const root = path.join(base, "EveJS");
   const write = (relative, text) => {
@@ -71,12 +90,13 @@ function buildFixtureRoot(base) {
   write("server/src/services/planet/planetOrbitalState.js", "// orbital fixture\n");
   write("docker/entrypoint.sh", ENTRYPOINT_FIXTURE);
   write("StartServer.bat", START_SERVER_FIXTURE);
+  write(".dockerignore", DOCKERIGNORE_FIXTURE);
   write(
     "server/package.json",
     `${JSON.stringify(
       {
         name: "eve.js",
-        version: "0.12.9",
+        version: "261018.1",
         scripts: {
           start:
             "node --report-on-fatalerror --report-uncaught-exception "
@@ -191,6 +211,36 @@ function register(harness) {
     });
     assert.strictEqual(result.ok, false);
     assert.match(result.reason, /no server launch/u);
+  });
+
+  test("installer: .dockerignore gains the mods allowlist in the 261018.1 layout", () => {
+    const result = registerLib.applyDockerignoreAllowlist(DOCKERIGNORE_FIXTURE);
+    assert.ok(result.ok, result.reason);
+    assert.strictEqual(result.changed, true);
+    assert.strictEqual(result.insertions, 4);
+    const lines = result.text.split("\n");
+    assert.ok(lines.includes("!mods/"), "the directory line is required");
+    assert.ok(lines.includes("!mods/**"), "the recursive line is required");
+    assert.ok(
+      lines.indexOf("!mods/**") < lines.indexOf("**/node_modules"),
+      "the allowlist has to precede the node_modules exclusion",
+    );
+  });
+
+  test("installer: .dockerignore patch is idempotent", () => {
+    const once = registerLib.applyDockerignoreAllowlist(DOCKERIGNORE_FIXTURE);
+    const twice = registerLib.applyDockerignoreAllowlist(once.text);
+    assert.strictEqual(twice.changed, false);
+    assert.strictEqual(twice.text, once.text);
+    assert.ok(registerLib.hasDockerignoreAllowlist(twice.text));
+  });
+
+  test("installer: .dockerignore without a `**` allowlist is left alone", () => {
+    const plain = "server/logs\nnode_modules\n";
+    const result = registerLib.applyDockerignoreAllowlist(plain);
+    assert.strictEqual(result.ok, true);
+    assert.strictEqual(result.changed, false);
+    assert.strictEqual(result.text, plain);
   });
 
   test("installer: native preload is added to StartServer.bat", () => {
@@ -364,6 +414,7 @@ function register(harness) {
       const entrypoint = path.join(root, "docker", "entrypoint.sh");
       const startServer = path.join(root, "StartServer.bat");
       const packageJson = path.join(root, "server", "package.json");
+      const dockerignore = path.join(root, ".dockerignore");
       const configFile = path.join(root, "config", "autoSkyHookDeploy.json");
       const target = path.join(root, "mods", MOD_ID);
       const read = (file) => fs.readFileSync(file, "utf8");
@@ -371,6 +422,7 @@ function register(harness) {
         entrypoint: read(entrypoint),
         startServer: read(startServer),
         packageJson: read(packageJson),
+        dockerignore: read(dockerignore),
       };
       const run = (script, args) => {
         const result = spawnSync(
@@ -425,11 +477,17 @@ ${result.stderr}`);
         entrypoint: read(entrypoint),
         startServer: read(startServer),
         loader: read(path.join(target, "loader.js")),
+        dockerignore: read(dockerignore),
       };
+      assert.strictEqual(
+        afterFirst.dockerignore,
+        registerLib.applyDockerignoreAllowlist(before.dockerignore).text,
+        ".dockerignore must carry the mods allowlist exactly once",
+      );
       const updateOutput = run("update.js", []);
       assert.match(updateOutput, /Updater/u);
-      assert.match(updateOutput, /Installed {2}: v1\.0\.0/u);
-      assert.match(updateOutput, /Updating to: v1\.0\.0/u);
+      assert.match(updateOutput, /Installed {2}: v1\.1\.0/u);
+      assert.match(updateOutput, /Updating to: v1\.1\.0/u);
 
       run("install.js", []);
       assert.deepStrictEqual(
@@ -437,6 +495,7 @@ ${result.stderr}`);
           entrypoint: read(entrypoint),
           startServer: read(startServer),
           loader: read(path.join(target, "loader.js")),
+          dockerignore: read(dockerignore),
         },
         afterFirst,
         "a reinstall must not stack a second registration or change the payload",
@@ -456,7 +515,8 @@ ${result.stderr}`);
       const statusOutput = run("install.js", ["--status"]);
       assert.match(statusOutput, /Docker {5}: registered/u);
       assert.match(statusOutput, /Native {5}: registered/u);
-      assert.match(statusOutput, /Version {4}: installed v1\.0\.0, payload v1\.0\.0/u);
+      assert.match(statusOutput, /Build ctx {2}: mods\/ included/u);
+      assert.match(statusOutput, /Version {4}: installed v1\.1\.0, payload v1\.1\.0/u);
 
       const dryRun = spawnSync(
         process.execPath,
@@ -470,6 +530,11 @@ ${result.stderr}`);
       assert.strictEqual(read(entrypoint), before.entrypoint, "entrypoint must be restored");
       assert.strictEqual(read(startServer), before.startServer, "StartServer.bat must be restored");
       assert.strictEqual(read(packageJson), before.packageJson, "package.json must never have been touched");
+      assert.strictEqual(
+        read(dockerignore),
+        afterFirst.dockerignore,
+        "the mods allowlist is left in .dockerignore on uninstall: another loader mod may still need it",
+      );
       assert.strictEqual(fs.existsSync(target), false, "mod folder must be retired");
       assert.ok(fs.existsSync(configFile), "the operator's configuration must survive an uninstall");
     } finally {
@@ -486,7 +551,7 @@ ${result.stderr}`);
         { encoding: "utf8", timeout: 60000 },
       );
       assert.notStrictEqual(result.status, 0);
-      assert.match(`${result.stdout}${result.stderr}`, /does not look like an EveJS 0\.12\.9 root/u);
+      assert.match(`${result.stdout}${result.stderr}`, /does not look like an EveJS root/u);
     } finally {
       fs.rmSync(workdir, { recursive: true, force: true });
     }

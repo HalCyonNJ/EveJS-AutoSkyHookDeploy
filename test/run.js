@@ -209,6 +209,13 @@ function createFixture(options = {}) {
     identityAllocatorMissing: options.identityAllocatorMissing === true,
     identityAllocatorThrows: options.identityAllocatorThrows === true,
     gameStoreMissing: options.gameStoreMissing === true,
+    // A system with no sovereignty row at all: the claim fallback must then
+    // report "unclaimed" rather than inventing an owner.
+    unclaimedSystem: options.unclaimedSystem === true,
+    // The anchor gate reads this through getSessionRegistry; a test flips it to
+    // simulate the client dropping in the middle of a run.
+    sessionOnline: options.sessionOnline !== false,
+    sessionsByCharacterID: new Map(),
   };
   // Which solar systems have a scene loaded, as the vendor's own registry sees it: a
   // scene exists only after something loaded (or created) it. `ensureScene` bootstraps a
@@ -550,6 +557,17 @@ function createFixture(options = {}) {
       return {
         read: (table, path) => {
           record("gameStoreRead", { table, path });
+          if (table === "sovereignty") {
+            if (fixture.unclaimedSystem) return { success: true, data: null };
+            return {
+              success: true,
+              data: {
+                solarSystemID: SYSTEM_ID,
+                corporationID: CORPORATION_ID,
+                allianceID: ALLIANCE_ID,
+              },
+            };
+          }
           return { success: true, data: { nextItemID: fixture.counterItemID } };
         },
       };
@@ -560,6 +578,22 @@ function createFixture(options = {}) {
         corporationID: CORPORATION_ID,
         allianceID: ALLIANCE_ID,
       }),
+    }),
+    // The anchor gate asks the vendor's own predicates: is this still the caller's
+    // live session, and is it docked? The fixture answers both from its own state so a
+    // test can undock or disconnect mid-run.
+    getSessionRegistry: () => ({
+      isRegisteredSession: (candidate) => fixture.sessionOnline !== false && Boolean(candidate),
+      // The fixture's sessions are registered by identity, so the tolerant lookup a
+      // real chat call path may need is never reached here.
+      findSessionByCharacterID: (characterID) => (
+        fixture.sessionOnline === false ? null : fixture.sessionsByCharacterID.get(Number(characterID)) || null
+      ),
+    }),
+    getStructureLocation: () => ({
+      isDockedSession: (candidate) => Boolean(
+        candidate && (candidate.stationID || candidate.stationid || candidate.structureID),
+      ),
     }),
   };
   return { fixture, deps };
@@ -607,6 +641,9 @@ function session(overrides = {}) {
     allianceID: ALLIANCE_ID,
     solarSystemID: SYSTEM_ID,
     characterName: "Halcyon",
+    // Docked by default: every anchor now requires it, and only the tests that are
+    // about the dock gate override it.
+    stationID: 60003760,
     ...overrides,
   };
 }
@@ -801,7 +838,7 @@ test("launcher manifest matches the loader version", () => {
   assert.deepStrictEqual([...manifest.supportedBackends], ["native", "docker"]);
   assert.strictEqual(manifest.activation.strategy, "loader_rename");
   assert.strictEqual(manifest.restart, "game_server");
-  assert.deepStrictEqual([...manifest.compatibility.evejsVersions], ["0.12.9"]);
+  assert.deepStrictEqual([...manifest.compatibility.evejsVersions], ["261018.1"]);
 });
 
 test("a configuration problem installs no hooks at all", () => {
@@ -1587,9 +1624,9 @@ test("remove: one Skyhook by id, and nothing else", () => {
   ].includes(name));
   assert.deepStrictEqual(order, [
     "markOrbitalDestroyed",
+    "destroySkyhooks",
     "ensureScene",
     "destroyDynamicInventoryEntity",
-    "destroySkyhooks",
   ]);
   assert.deepStrictEqual(
     fixture.calls.filter((entry) => entry.fn === "markOrbitalDestroyed").map((entry) => entry.itemID),
@@ -3941,29 +3978,25 @@ test("plan: a structure-shaped skyhook with no planet blocks the whole system", 
 // planet of a CLAIMED system that has no deployed orbital. That row is what a
 // deploy is for, so it must read as free; only a real deployment record - a row
 // under any other key, or deployedItem: true - is occupancy.
-test("plan: a claimed system whose planets only have their slot rows deploys all of them", () => {
+test("plan: a claimed system with no deployed skyhook deploys every planet", () => {
   const planets = [1, 2, 3, 4, 5].map((index) => planet(40009000 + index, `Planet ${index}`, index));
-  const ledger = {};
-  for (const entry of planets) {
-    ledger[String(SKYHOOK_ITEM_ID_OFFSET + entry.planetID)] = ledgerRow(entry.planetID);
-  }
-  const { fixture, deps } = createFixture({ planets, ledger });
+  const { fixture, deps } = createFixture({ planets });
   const runtime = createRuntimeWith(fixture, deps);
   const plan = runtime.buildPlan(SYSTEM_ID, session());
   assert.strictEqual(plan.ok, true);
-  assert.strictEqual(plan.error, null, "a free game-created slot must not block a deploy");
+  assert.strictEqual(plan.error, null, "an empty claimed system must not block a deploy");
   assert.deepStrictEqual(
     plan.deployable.map((entry) => entry.planetID),
     [40009001, 40009002, 40009003, 40009004, 40009005],
   );
   assert.deepStrictEqual(plan.skippedPresent, []);
   assert.deepStrictEqual(plan.overDestroyed, []);
-  assert.ok(plan.claim, "the slot rows still say which corporation holds the system");
+  assert.ok(plan.claim, "the system row still says which corporation holds the system");
   assert.strictEqual(plan.claim.corporationID, CORPORATION_ID);
-  // Status still distinguishes the slot from a built skyhook - read before the
-  // deploy below, which is what turns those slots into real skyhooks.
+  // 261018.1 has no per-planet slot row: a planet with nothing on it is free.
   const status = runtime.describeStatus(runtime.statusSystem(SYSTEM_ID, session()), {});
-  assert.match(status, /Planet 1: free \(game-created slot, nothing built on it yet\)/u);
+  assert.match(status, /Planet 1: free\b/u);
+  assert.doesNotMatch(status, /game-created slot/u);
   assert.match(status, /5 planet\(s\): 0 with a skyhook, 0 free over a destroyed skyhook \(deployable\), 5 free/u);
   const result = runtime.applyPlan(plan, session());
   assert.strictEqual(result.deployed.length, 5);
@@ -3974,16 +4007,14 @@ test("plan: a claimed system whose planets only have their slot rows deploys all
   );
 });
 
-test("plan: a real deployment record under its own item id blocks, slot rows do not", () => {
+test("plan: a real deployment record under its own item id blocks its planet", () => {
   const planets = [1, 2, 3, 4, 5].map((index) => planet(40009000 + index, `Planet ${index}`, index));
-  const ledger = {};
-  for (const entry of planets) {
-    ledger[String(SKYHOOK_ITEM_ID_OFFSET + entry.planetID)] = ledgerRow(entry.planetID);
-  }
-  ledger["1000000000123"] = ledgerRow(40009002, {
-    skyhookID: 1000000000123,
-    deployedItem: true,
-  });
+  const ledger = {
+    "1000000000123": ledgerRow(40009002, {
+      skyhookID: 1000000000123,
+      deployedItem: true,
+    }),
+  };
   const { fixture, deps } = createFixture({ planets, ledger });
   const runtime = createRuntimeWith(fixture, deps);
   const plan = runtime.buildPlan(SYSTEM_ID, session());
@@ -4002,15 +4033,11 @@ test("plan: a real deployment record under its own item id blocks, slot rows do 
   );
 });
 
-test("plan: a destroyed planet slot does not block either", () => {
+test("plan: a destroyed deployment record does not block either", () => {
   const planets = [1, 2, 3, 4, 5].map((index) => planet(40009000 + index, `Planet ${index}`, index));
-  const ledger = {};
-  for (const entry of planets) {
-    ledger[String(SKYHOOK_ITEM_ID_OFFSET + entry.planetID)] = ledgerRow(entry.planetID);
-  }
-  // The RYQC-I / 0OTX-J shape: the planet slot was destroyed. A new Skyhook may
-  // be placed there; the old row stays as history.
-  ledger[String(SKYHOOK_ITEM_ID_OFFSET + 40009003)] = ledgerRow(40009003, { destroyed: true });
+  const ledger = {
+    "1000000000123": ledgerRow(40009003, { skyhookID: 1000000000123, destroyed: true }),
+  };
   const { fixture, deps } = createFixture({ planets, ledger });
   const runtime = createRuntimeWith(fixture, deps);
   const plan = runtime.buildPlan(SYSTEM_ID, session());
@@ -4021,16 +4048,16 @@ test("plan: a destroyed planet slot does not block either", () => {
   );
   assert.deepStrictEqual(plan.overDestroyed.map((entry) => entry.planetID), [40009003]);
   assert.strictEqual(
-    fixture.ledger[String(SKYHOOK_ITEM_ID_OFFSET + 40009003)].destroyed,
+    fixture.ledger["1000000000123"].destroyed,
     true,
-    "the destroyed slot row is never cleared",
+    "the destroyed row is never cleared",
   );
   const text = runtime.describePlan(plan, runtime.applyPlan(plan, session()));
   assert.match(text, /deployed 5, skipped 0 already present, 1 over a destroyed skyhook/u);
-  assert.match(text, /orbital skyhook at Planet 3 \(old slot tombstone - kept as history\)/u);
+  assert.match(text, /orbital skyhook at Planet 3 \(old ledger tombstone - kept as history\)/u);
 });
 
-test("plan: one system mixing slot, live, tombstone, structure and deployed ledger", () => {
+test("plan: one system mixing live, tombstone, structure and deployed ledger", () => {
   const planets = [1, 2, 3, 4, 5].map((index) => planet(40009000 + index, `Planet ${index}`, index));
   const { fixture, deps } = createFixture({
     planets,
@@ -4039,8 +4066,6 @@ test("plan: one system mixing slot, live, tombstone, structure and deployed ledg
       orbital(40009003, 1000000000003, { destroyedAtMs: 1700000000000 }),
     ],
     ledger: {
-      // P1: only the game-created slot -> free.
-      [String(SKYHOOK_ITEM_ID_OFFSET + 40009001)]: ledgerRow(40009001),
       // P5: a deployment record with no orbital record in sight -> occupied.
       "1000000000123": ledgerRow(40009005, { skyhookID: 1000000000123, deployedItem: true }),
     },
@@ -4207,7 +4232,7 @@ test("plan: requireClaimedSystemOwnership refuses a system held by somebody else
   });
   assert.strictEqual(owned.buildPlan(SYSTEM_ID, session({ corporationID: 97000001 })).error, null);
 
-  const unclaimed = createFixture();
+  const unclaimed = createFixture({ unclaimedSystem: true });
   const claiming = createRuntimeWith(unclaimed.fixture, unclaimed.deps, {
     requireClaimedSystemOwnership: true,
   });
@@ -4316,9 +4341,9 @@ test("remove runs the destruction triple per skyhook, in order", () => {
   ].includes(name));
   assert.deepStrictEqual(order, [
     "markOrbitalDestroyed",
+    "destroySkyhooks",
     "ensureScene",
     "destroyDynamicInventoryEntity",
-    "destroySkyhooks",
   ]);
   const removal = fixture.calls.find((entry) => entry.fn === "destroyDynamicInventoryEntity");
   assert.strictEqual(removal.destroyOptions.suppressExplosion, true);
@@ -4529,15 +4554,13 @@ test("status honours includeDestroyedInStatus and the listing cap", () => {
 });
 
 test("status says when the system is unclaimed or claimed", () => {
-  const unclaimed = createFixture();
+  const unclaimed = createFixture({ unclaimedSystem: true });
   const unclaimedRuntime = createRuntimeWith(unclaimed.fixture, unclaimed.deps);
   assert.match(
     unclaimedRuntime.describeStatus(unclaimedRuntime.statusSystem(SYSTEM_ID, session()), {}),
     /no row for this system \(unclaimed\)/u,
   );
-  const claimed = createFixture({
-    ledger: { [String(SKYHOOK_ITEM_ID_OFFSET + 40009001)]: ledgerRow(40009001, { active: true }) },
-  });
+  const claimed = createFixture();
   const claimedRuntime = createRuntimeWith(claimed.fixture, claimed.deps);
   assert.match(
     claimedRuntime.describeStatus(claimedRuntime.statusSystem(SYSTEM_ID, session()), {}),
@@ -5289,7 +5312,10 @@ test("the live vendor tree still exposes every entry point this mod calls", () =
       /this\.positionAuthority = createScenePositionAuthority\(\{/u,
     ]],
     ["server/src/services/sovereignty/sovModernState.js", [
-      /const SKYHOOK_ITEM_ID_OFFSET = 1000000000000;/u,
+      // 261018.1 retired the synthetic per-planet slot; ledger rows are derived
+      // from orbitals that carry deployedItem.
+      /function readDeployedSkyhookOrbitals\(\)/u,
+      /deployedItem: value\.deployedItem === true,/u,
       /function bootstrapSkyhooksFromSystems\(/u,
       /function getSkyhook\(skyhookID, identity\)/u,
       /function listLocalSkyhooks\(identity\)/u,
@@ -5338,7 +5364,153 @@ test("the live vendor tree still refuses what this mod refuses to call", () => {
     "utf8",
   );
   assert.match(sov, /destroyed: true,/u, "the ledger tombstone flag must still exist");
-  assert.match(sov, /if \(table\.skyhooks && table\.skyhooks\[key\] && table\.skyhooks\[key\]\.destroyed === true\) \{/u);
+  // 261018.1 keeps a destroyed row (history) and prunes a stale live one; a
+  // raid-retained row is settled before it is kept.
+  assert.match(sov, /if \(oldSkyhook\.destroyed === true\) continue;/u);
+  assert.match(sov, /if \(oldSkyhook\.deployedItem === true && oldSkyhook\.raid\) \{/u);
+});
+
+// ─── the anchor safety gate ─────────────────────────────────────────────────
+//
+// Anchoring is the one run that makes the NEXT server restart slow (the vendor
+// initialises each new Skyhook's silo on that boot, one at a time), so the caller
+// has to be docked and online: the run refuses to start otherwise, stops the
+// moment they undock or drop, and every reply says the restart is coming.
+
+function anchorRegionFixture() {
+  const systems = [SYSTEM_ID, 30000144];
+  const planets = systems.flatMap((systemID, index) => [{
+    ...planet(40009001 + (index * 10), `P${index}I`, index + 1),
+    solarSystemID: systemID,
+  }]);
+  return createFixture({
+    planets,
+    solarSystems: systems.map((systemID) => ({
+      solarSystemID: systemID, regionID: REGION_ID, security: -0.5, factionID: 0,
+    })),
+  });
+}
+
+test("anchor region: refuses to start unless the caller is docked", () => {
+  const { fixture, deps } = createFixture();
+  const runtime = createRuntimeWith(fixture, deps);
+  const config = configModule.load(modDir, {});
+  const reply = chatCommand.handleCommand(
+    runtime, config, session({ stationID: 0 }), "anchor region 10000043",
+  ).message;
+  assert.match(reply, /###WARNING###/u, reply);
+  assert.match(reply, /anchor refused: your ship is not docked/u, reply);
+  assert.strictEqual(
+    fixture.calls.some((entry) => entry.fn === "createSpaceItemForOwner"),
+    false,
+    "a refused region anchor must not create anything",
+  );
+});
+
+test("anchor region: refuses to start when the session is no longer registered", () => {
+  const { fixture, deps } = createFixture({ sessionOnline: false });
+  const runtime = createRuntimeWith(fixture, deps);
+  const config = configModule.load(modDir, {});
+  const reply = chatCommand.handleCommand(runtime, config, session(), "anchor region 10000043").message;
+  assert.match(reply, /###WARNING###/u, reply);
+  assert.match(reply, /anchor refused: your client is not online/u, reply);
+});
+
+test("anchor here: a single system needs no dock gate and no restart nag", () => {
+  const { fixture, deps } = createFixture();
+  const runtime = createRuntimeWith(fixture, deps);
+  const config = configModule.load(modDir, {});
+  // Undocked on purpose: only region runs are gated.
+  const reply = chatCommand.handleCommand(
+    runtime, config, session({ stationID: 0 }), "anchor here",
+  ).message;
+  assert.doesNotMatch(reply, /###WARNING###/u, reply);
+  assert.doesNotMatch(reply, /anchor refused/u, reply);
+  assert.match(reply, /deployed 3, skipped 0 already present/u, reply);
+});
+
+test("/ash help explains the slow restart after anchoring", () => {
+  const { fixture, deps } = createFixture();
+  const runtime = createRuntimeWith(fixture, deps);
+  const config = configModule.load(modDir, {});
+  const reply = chatCommand.handleCommand(runtime, config, session(), "help").message;
+  assert.match(reply, /###WARNING###/u, reply);
+  assert.match(reply, /NEXT server restart slow/u, reply);
+  assert.match(reply, /later restarts are fast again/u, reply);
+});
+
+test("anchor region: the start reply warns to stay docked", () => {
+  const clock = createClock();
+  const messages = [];
+  const run = startRegionRun(clock, messages, {});
+  assert.match(run.reply, /###WARNING###/u, run.reply);
+  assert.match(run.reply, /STAY DOCKED while this runs/u, run.reply);
+  assert.match(run.reply, /restarts are fast again/u, run.reply);
+});
+
+test("anchor region: undocking stops the run immediately", () => {
+  const clock = createClock();
+  const messages = [];
+  const { fixture, deps } = anchorRegionFixture();
+  const runtime = createRuntimeWith(fixture, deps, {}, {
+    timers: clock,
+    sendTo: (target, message) => {
+      messages.push(message);
+      return { entry: { message } };
+    },
+  });
+  const config = configModule.load(modDir, {});
+  const caller = session();
+  const reply = chatCommand.handleCommand(runtime, config, caller, "anchor region 10000043").message;
+  assert.match(reply, /###WARNING###/u, reply);
+  clock.advance(15000);
+  const deployedAfterFirst = fixture.calls
+    .filter((entry) => entry.fn === "createSpaceItemForOwner").length;
+  assert.ok(deployedAfterFirst > 0, "the first system must have been worked");
+  // The player undocks while the run waits for the next system.
+  caller.stationID = 0;
+  clock.advance(2000);
+  assert.match(messages[messages.length - 1], /anchor run stopped immediately: you left the station/u);
+  assert.match(messages[messages.length - 1], /###WARNING###/u);
+  assert.strictEqual(runtime.regionRunStatus(), null, "the run must be gone");
+  assert.strictEqual(clock.pending(), 0, "no timer may be left behind");
+  assert.strictEqual(
+    fixture.calls.filter((entry) => entry.fn === "createSpaceItemForOwner").length,
+    deployedAfterFirst,
+    "no further system may be built",
+  );
+});
+
+test("anchor region: a disconnect stops the run immediately", () => {
+  const clock = createClock();
+  const messages = [];
+  const { fixture, deps } = anchorRegionFixture();
+  const runtime = createRuntimeWith(fixture, deps, {}, {
+    timers: clock,
+    sendTo: (target, message) => {
+      messages.push(message);
+      return { entry: { message } };
+    },
+  });
+  const config = configModule.load(modDir, {});
+  chatCommand.handleCommand(runtime, config, session(), "anchor region 10000043");
+  clock.advance(15000);
+  fixture.sessionOnline = false;
+  clock.advance(2000);
+  assert.match(messages[messages.length - 1], /anchor run stopped immediately: your client went offline/u);
+  assert.strictEqual(runtime.regionRunStatus(), null);
+  assert.strictEqual(clock.pending(), 0);
+});
+
+test("anchor region: completion recommends one restart", () => {
+  const clock = createClock();
+  const messages = [];
+  const run = startRegionRun(clock, messages, {});
+  clock.advance(100000);
+  assert.ok(messages.length > 0, "the run must report");
+  const last = messages[messages.length - 1];
+  assert.match(last, /###WARNING###/u, last);
+  assert.match(last, /Restart the game server once now, while you are docked/u, last);
 });
 
 require("./installer")({ test, modDir });

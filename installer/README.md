@@ -1,15 +1,17 @@
 # Auto Skyhook Deploy - installer
 
-Registers the mod's loader with an EveJS 0.12.9 installation and keeps the mod
-folder in step with this package. It edits exactly two things:
+Registers the mod's loader with an EveJS 261018.1 installation and keeps the mod
+folder in step with this package. It edits three things:
 
 | Deployment | File | What is written |
 |---|---|---|
 | Docker | `docker/entrypoint.sh` | `--require /app/mods/autoSkyHookDeploy/loader.js` on both server launches |
+| Docker build context | `.dockerignore` | `!mods/` and `!mods/**`, because 261018.1's allowlist does not mention `mods/` |
 | Windows native | `StartServer.bat` | an append-only block that adds `--require "<root>/mods/autoSkyHookDeploy/loader.js"` to `NODE_OPTIONS` |
 
-Nothing else in the installation is touched. `server/package.json` is
-deliberately left alone: it is an input to the image's dependency layer, so
+Nothing else in the installation is touched. The `.dockerignore` lines stay in
+place on uninstall - another loader mod may still need them. `server/package.json`
+is deliberately left alone: it is an input to the image's dependency layer, so
 editing it would force a dependency reinstall on the next image build.
 
 ## Usage

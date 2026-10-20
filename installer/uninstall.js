@@ -69,7 +69,7 @@ function resolveRoot(options) {
   if (explicit) {
     const resolved = path.resolve(explicit);
     if (!deployment.isEveJsRoot(resolved)) {
-      fail(`${resolved} does not look like an EveJS 0.12.9 root `
+      fail(`${resolved} does not look like an EveJS root `
         + "(server/index.js and server/src/services/planet/planetOrbitalState.js must exist)");
     }
     return resolved;

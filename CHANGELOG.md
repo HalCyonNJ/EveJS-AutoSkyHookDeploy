@@ -4,6 +4,82 @@ All notable changes to this mod are recorded here. One section per release; the
 version matches `MOD_VERSION` in `loader.js` and the version in
 `evejs-launcher.mod.json`.
 
+## 1.1.0 - 2026-10-20
+
+**Re-anchored on EveJS 261018.1, where the sovereignty ledger no longer has a free
+per-planet slot.**
+
+- **The synthetic `SKYHOOK_ITEM_ID_OFFSET + planetID` slot is gone from the vendor.**
+  261018.1 derives ledger rows from orbitals that carry `deployedItem` and retires
+  every row it cannot derive, so the mod's slot probe, its "free (game-created
+  slot)" status text and its slot-keyed tombstone wording were dead code. Any
+  ledger row that is not destroyed is now occupancy; a claimed planet with nothing
+  on it simply has no row and is `free`.
+- **The ownership gate no longer loses the claim in an empty system.** With no
+  slots there is no ledger row to read the owner from, so
+  `requireClaimedSystemOwnership` now falls back to the system's own sovereignty
+  row (`gameStore.read("sovereignty", "/systems/<id>")`). Only a system with no row
+  at all is unclaimed.
+- **Removal writes the ledger tombstone before it deletes the item row.** The
+  ledger is derived from the live item on 261018.1, so the old order (entity, then
+  ledger) made the tombstone a no-op. The reply's `ledger tombstoned` flag is
+  accurate again.
+- **A deploy now verifies the ledger row.** After `ensureOrbitalForItem` the mod
+  reads `getSkyhook(itemID)` back; a refused read logs a loud error instead of
+  reporting a clean deploy, because 261018.1 only derives a row when the item still
+  matches its orbital exactly.
+- **Docker installs keep `mods/` in the build context.** 261018.1's `.dockerignore`
+  is `**` plus an allowlist that does not mention `mods/`, and the image is built
+  with `COPY . .`, so the installer now adds `!mods/` and `!mods/**` (idempotent,
+  backed up, left in place on uninstall).
+- **Region anchors require the caller to be docked and online.** A region run
+  refuses to start otherwise, and polls both on every countdown tick and before
+  every system: undock, log off or relog and the run stops immediately - the
+  systems already finished stay committed and verified. This is a safety gate,
+  not a formality: the run's cost lands on the next server boot, and that boot
+  must happen while the operator is docked and watching. A single system
+  (`anchor here` / `anchor system <id>`) is a handful of Skyhooks and stays
+  ungated, so it still runs from anywhere.
+- **The replies explain the slow restart, in `###WARNING###` blocks.** Every
+  region anchor start says the first restart will be slow (the vendor initialises
+  each new Skyhook's raid/silo record on that boot, one at a time, seconds each),
+  and every completed region run recommends restarting the game server once
+  yourself while docked; `/ash` and `/ash help` carry the same explanation.
+- Verified with the development suite at **143/143 PASS**, including the live-tree
+  probes against 261018.1.
+
+### Known upstream cost: a region full of Skyhooks slows the game down
+
+This is a property of EveJS 261018.1 itself, not of this mod's code. It is
+measured on a live server (917 Skyhooks in 108 systems), and it is the reason the
+mod says so in every anchor reply:
+
+- **The first restart after a region anchor is slow.** Each new Skyhook has no
+  raid/silo record, so on that boot the vendor runs
+  `ensureSilo(initializeRecord(record))` for every one of them, one at a time
+  (`server/src/services/sovereignty/skyhookRaidRuntime.js:536/543`), each with its
+  own synchronous flush. Measured: **24 min 42 s** for 917 Skyhooks. It is not a
+  hang, and later restarts are fast again - after that boot every row has its
+  `raid`/`siloID` (measured: 917/917).
+- **Jumping and undocking get slower as a system fills up.** Every scene entry
+  re-hydrates that system's items and orbitals
+  (`server/src/space/runtime/solarSystemScene.js:253/261-299`), and the client
+  bind waits for it (`server/src/services/ship/beyonceService.js:4431-4437`).
+  Measured per transition in an anchored system: undock handler **1.7-2.4 s**,
+  bind bootstrap **7.9-9.8 s** with 5-11 Skyhooks - roughly **0.6-0.9 s per
+  Skyhook**. The same server is otherwise idle and healthy: **0.4 ms** median
+  in-process `/health`, ~9% CPU.
+- **Each Skyhook is three rows in `items`**: the Skyhook, its
+  `Skyhook Reagent Silo` (group 4745, created by the vendor on boot) and one
+  `item-custody` receipt row (typeID 81933). A 9-Skyhook system therefore holds
+  37 item rows, all re-hydrated on every jump or undock.
+- **What this mod does about it:** nothing, deliberately - it creates the
+  Skyhooks through the vendor's own `createSpaceItemForOwner` and then does no
+  background work at all (`tickScene` is a version check). The cost is in the
+  vendor's scene bootstrap and first boot. The replies warn about the slow
+  restart, region runs require you to be docked and online, and a single system
+  stays cheap.
+
 ## 1.0.0 - 2026-10-02
 
 First release.

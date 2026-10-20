@@ -82,11 +82,25 @@ warping in does not materialise inside it (`/ash offset` changes that). Only a b
 the game has no warp-in point for (a body under 90 km radius, an asteroid belt) gets
 a plain fallback placement instead.
 
+### Region runs: docked only, and one slow restart afterwards
+
+A **region** anchor refuses to start unless you are docked and online, and it
+re-checks both on every countdown tick and before every system, so undocking or
+logging off stops it immediately - the systems already finished stay committed and
+verified. A single system (`here` / `system <id>`) needs none of that: it is a
+handful of Skyhooks, runs from anywhere, and costs the next boot only a moment.
+
+The **first server restart after a region anchor is slow, and that is expected**:
+on that boot the server initialises a raid/silo record for every new Skyhook, one
+at a time, and each takes seconds. A whole region can make it take a very long
+time. It is not a hang, and later restarts are fast again. Finish the run docked,
+then restart the game server once yourself, at a time you choose.
+
 **A system with three free planets**
 
 ```
 /ash anchor here
-autoSkyHookDeploy v1.0.0: Jita: deployed 3, skipped 0 already present, 0 over a destroyed skyhook
+autoSkyHookDeploy v1.1.0: Jita: deployed 3, skipped 0 already present, 0 over a destroyed skyhook
   deployed: orbital skyhook at Planet I; orbital skyhook at Planet II; orbital skyhook at Planet III
   each one starts ONLINING with the vendor's own 60 s activation timer and settles to IDLE by itself
 ```
@@ -95,7 +109,7 @@ autoSkyHookDeploy v1.0.0: Jita: deployed 3, skipped 0 already present, 0 over a 
 
 ```
 /ash anchor 30000142
-autoSkyHookDeploy v1.0.0: Jita: deployed 1, skipped 2 already present, 0 over a destroyed skyhook
+autoSkyHookDeploy v1.1.0: Jita: deployed 1, skipped 2 already present, 0 over a destroyed skyhook
   deployed: orbital skyhook at Planet III
   each one starts ONLINING with the vendor's own 60 s activation timer and settles to IDLE by itself
   already present: orbital skyhook at Planet I (live skyhook); orbital skyhook at Planet II (sovereignty ledger row (deployed))
@@ -107,7 +121,7 @@ Nothing is created and the reply says so rather than reporting a silent success:
 
 ```
 /ash anchor here
-autoSkyHookDeploy v1.0.0: nothing to deploy: Jita: all 3 planets already have a skyhook (3 present); nothing to deploy
+autoSkyHookDeploy v1.1.0: nothing to deploy: Jita: all 3 planets already have a skyhook (3 present); nothing to deploy
 ```
 
 **A planet whose skyhook was destroyed**
@@ -119,7 +133,7 @@ item id beside it, and the reply counts the deployment in its own column:
 
 ```
 /ash anchor here
-autoSkyHookDeploy v1.0.0: Jita: deployed 3, skipped 0 already present, 1 over a destroyed skyhook
+autoSkyHookDeploy v1.1.0: Jita: deployed 3, skipped 0 already present, 1 over a destroyed skyhook
   deployed: orbital skyhook at Planet I; orbital skyhook at Planet II; orbital skyhook at Planet III
   each one starts ONLINING with the vendor's own 60 s activation timer and settles to IDLE by itself
   over a destroyed skyhook: orbital skyhook at Planet III (old orbital tombstone - kept as history)
@@ -130,48 +144,47 @@ deployed on in full, not refused:
 
 ```
 /ash anchor here
-autoSkyHookDeploy v1.0.0: Jita: deployed 3, skipped 0 already present, 3 over a destroyed skyhook
+autoSkyHookDeploy v1.1.0: Jita: deployed 3, skipped 0 already present, 3 over a destroyed skyhook
   ...
   over a destroyed skyhook: orbital skyhook at Planet I (old orbital tombstone - kept as history); orbital skyhook at Planet II (old orbital tombstone - kept as history); orbital skyhook at Planet III (old orbital tombstone - kept as history)
 ```
 
-**A claimed system, with free game-created slots**
+**A claimed system with nothing built on it**
 
-The game mints a free slot for every planet of a claimed system that has nothing
-built on it. A slot is not occupancy - it is the room a Skyhook is meant to go
-in, and it is why `/ash anchor` is useful in the systems that matter. All five
+EveJS 261018.1 no longer mints a free per-planet slot, so a planet with nothing on
+it has no row anywhere - and that is exactly what a deploy is for. All five
 planets are filled:
 
 ```
 /ash anchor here
-autoSkyHookDeploy v1.0.0: Jita: deployed 5, skipped 0 already present, 0 over a destroyed skyhook
+autoSkyHookDeploy v1.1.0: Jita: deployed 5, skipped 0 already present, 0 over a destroyed skyhook
   deployed: orbital skyhook at Planet 1; orbital skyhook at Planet 2; orbital skyhook at Planet 3; orbital skyhook at Planet 4; orbital skyhook at Planet 5
   each one starts ONLINING with the vendor's own 60 s activation timer and settles to IDLE by itself
 ```
 
-**A planet already occupied by something that is not a free slot**
+**A planet already occupied**
 
-A structure-shaped skyhook (the vendor's second, competing route for typeid
-81080) and a ledger row for a real deployment are occupancy. The reply names which
-one was found:
+A live skyhook, a structure-shaped skyhook (the vendor's second, competing route
+for typeid 81080) and a ledger row for a real deployment are occupancy. The reply
+names which one was found:
 
 ```
 /ash anchor here
-autoSkyHookDeploy v1.0.0: Jita: deployed 1, skipped 2 already present, 0 over a destroyed skyhook
+autoSkyHookDeploy v1.1.0: Jita: deployed 1, skipped 2 already present, 0 over a destroyed skyhook
   deployed: orbital skyhook at Planet III
   each one starts ONLINING with the vendor's own 60 s activation timer and settles to IDLE by itself
   already present: orbital skyhook at Planet I (sovereignty ledger row (deployed)); orbital skyhook at Planet II (structure-shaped skyhook)
 ```
 
-A planet whose slot was destroyed is deployed on as well - the destroyed slot is
-history, not a refusal - so all five planets in that system are filled:
+A planet whose old skyhook was destroyed is deployed on as well - the destroyed
+record is history, not a refusal - so all five planets in that system are filled:
 
 ```
 /ash anchor here
-autoSkyHookDeploy v1.0.0: Jita: deployed 5, skipped 0 already present, 1 over a destroyed skyhook
+autoSkyHookDeploy v1.1.0: Jita: deployed 5, skipped 0 already present, 1 over a destroyed skyhook
   deployed: orbital skyhook at Planet 1; orbital skyhook at Planet 2; orbital skyhook at Planet 3; orbital skyhook at Planet 4; orbital skyhook at Planet 5
   each one starts ONLINING with the vendor's own 60 s activation timer and settles to IDLE by itself
-  over a destroyed skyhook: orbital skyhook at Planet 3 (old slot tombstone - kept as history)
+  over a destroyed skyhook: orbital skyhook at Planet 3 (old ledger tombstone - kept as history)
 ```
 
 A structure-shaped skyhook that is not tied to any planet blocks the whole
@@ -179,7 +192,7 @@ system, because nothing may be built where an unattributable one might be:
 
 ```
 /ash anchor here
-autoSkyHookDeploy v1.0.0: nothing to deploy: Jita already holds a structure-shaped skyhook (1100000000999) that is not tied to a planet; refusing to build anywhere in that system
+autoSkyHookDeploy v1.1.0: nothing to deploy: Jita already holds a structure-shaped skyhook (1100000000999) that is not tied to a planet; refusing to build anywhere in that system
 ```
 
 **A system with no sovereignty infrastructure**
@@ -209,7 +222,7 @@ runs:
 
 ```
 /ash anchor here
-autoSkyHookDeploy v1.0.0: Jita: deployed 2, skipped 0 already present, 0 over a destroyed skyhook
+autoSkyHookDeploy v1.1.0: Jita: deployed 2, skipped 0 already present, 0 over a destroyed skyhook
   deployed: orbital skyhook at Planet I; orbital skyhook at Planet II
   each one starts ONLINING with the vendor's own 60 s activation timer and settles to IDLE by itself
   FAILED orbital skyhook at Planet III: INVENTORY_FULL
@@ -240,10 +253,10 @@ autoSkyHookDeploy: no current solar system on this session; name a system id ins
 autoSkyHookDeploy: deploy is switched off on this server (EVEJS_AUTO_SKYHOOK_DEPLOY_ALLOW_DEPLOY=0).
 
 /ash anchor here          (requireClaimedSystemOwnership = 1, system held by somebody else)
-autoSkyHookDeploy v1.0.0: nothing to deploy: that system belongs to another corporation or alliance, and this server only deploys into a system its owner already holds
+autoSkyHookDeploy v1.1.0: nothing to deploy: that system belongs to another corporation or alliance, and this server only deploys into a system its owner already holds
 
 /ash anchor here          (more planets than maxPlanetsPerCommand)
-autoSkyHookDeploy v1.0.0: Jita has 65 planets, above the configured maxPlanetsPerCommand (64); raise the cap to work on this system
+autoSkyHookDeploy v1.1.0: Jita has 65 planets, above the configured maxPlanetsPerCommand (64); raise the cap to work on this system
 ```
 
 ---
@@ -266,14 +279,15 @@ interchangeable once a name resolves to exactly one Skyhook. Per skyhook the
 vendor's destruction sequence runs in this order:
 
 1. the orbital record becomes a tombstone (kept, never deleted);
-2. the scene entity is destroyed, which also removes the `items` row - and
-   `DYNAMIC_ENTITY_NOT_FOUND` counts as success, so a retry is safe;
-3. the sovereignty ledger gets its tombstone immediately instead of waiting for
-   the next bootstrap.
+2. the sovereignty ledger gets its tombstone **before** the item row disappears,
+   because 261018.1 derives ledger rows from live orbitals - written afterwards it
+   would be a no-op;
+3. the scene entity is destroyed, which also removes the `items` row - and
+   `DYNAMIC_ENTITY_NOT_FOUND` counts as success, so a retry is safe.
 
 ```
 /ash remove 1000000000002
-autoSkyHookDeploy v1.0.0: Jita: destroyed 1, already destroyed 0, left alone 0 structure-shaped
+autoSkyHookDeploy v1.1.0: Jita: destroyed 1, already destroyed 0, left alone 0 structure-shaped
   destroyed orbital skyhook at Planet II, ledger tombstoned
   item id counter: 9988400003304 (already ahead of the highest id)
 ```
@@ -286,7 +300,7 @@ one. Asking twice is therefore safe, and answered gracefully:
 
 ```
 /ash remove 1000000000002
-autoSkyHookDeploy v1.0.0: Jita: destroyed 0, already destroyed 1, left alone 0 structure-shaped
+autoSkyHookDeploy v1.1.0: Jita: destroyed 0, already destroyed 1, left alone 0 structure-shaped
   destroyed markers left alone: 1 (a destroyed skyhook stays destroyed until something is deployed on that planet again) - the skyhook is already gone, and the planet can be deployed on again
   item id counter: 9988400003304 (already ahead of the highest id)
 ```
@@ -345,7 +359,7 @@ it, with the same per-id sequence and the same calibration of the item-id counte
 
 ```
 /ash unanchor here
-autoSkyHookDeploy v1.0.0: Jita: destroyed 3, already destroyed 1, left alone 1 structure-shaped
+autoSkyHookDeploy v1.1.0: Jita: destroyed 3, already destroyed 1, left alone 1 structure-shaped
   destroyed orbital skyhook at Planet I, ledger tombstoned
   destroyed orbital skyhook at Planet II, ledger tombstoned
   destroyed orbital skyhook at Planet III, ledger tombstoned
@@ -359,7 +373,7 @@ which are the durable part - still land:
 
 ```
 /ash unanchor 30000142
-autoSkyHookDeploy v1.0.0: Jita: destroyed 1, already destroyed 0, left alone 0 structure-shaped
+autoSkyHookDeploy v1.1.0: Jita: destroyed 1, already destroyed 0, left alone 0 structure-shaped
   destroyed orbital skyhook at Planet I, ledger tombstoned, scene entity: SCENE_NOT_FOUND
   FAILED orbital skyhook at Planet I: scene entity: SCENE_NOT_FOUND
 ```
@@ -445,7 +459,7 @@ burst - mass-creating structures can stall the game - so they run as a job:
 
    ```
    /ash anchor region 10000060
-   autoSkyHookDeploy v1.0.0: Delve: 85 systems to work, 12 NPC/faction space skipped - starting in 15 s, type /ash stop to cancel
+   autoSkyHookDeploy v1.1.0: Delve: 85 systems to work, 12 NPC/faction space skipped - starting in 15 s, type /ash stop to cancel
      skipped NPC/faction space: Jita, Perimeter
    please stay in game and avoid jumping or logging off until the run finishes; type /ash stop to cancel
      estimated 3 m 51 s: 85 systems, 640 planets, 84 x 2000 ms step delay, 15 s countdown (first run, so this uses the default 48 ms per planet)
@@ -463,7 +477,7 @@ burst - mass-creating structures can stall the game - so they run as a job:
    live and attached to the right planet - and the result is reported:
 
    ```
-   autoSkyHookDeploy v1.0.0: Delve: 9 deployed, verified 9 at the landing point + 25000 m, 0 anomalies  [10/40 systems done, 30 systems left, about 1 m 40 s remaining]
+   autoSkyHookDeploy v1.1.0: Delve: 9 deployed, verified 9 at the landing point + 25000 m, 0 anomalies  [10/40 systems done, 30 systems left, about 1 m 40 s remaining]
    ```
 
    An anomaly is named rather than hidden (`ANOMALY orbital skyhook at RYQC-I I sits
@@ -474,7 +488,7 @@ burst - mass-creating structures can stall the game - so they run as a job:
 The run ends with a summary:
 
 ```
-autoSkyHookDeploy v1.0.0: Delve: finished - 85 of 85 systems done, 0 left, in 3 m 11 s (including the countdown; estimated 3 m 04 s; 49 ms per planet measured)
+autoSkyHookDeploy v1.1.0: Delve: finished - 85 of 85 systems done, 0 left, in 3 m 11 s (including the countdown; estimated 3 m 04 s; 49 ms per planet measured)
   deployed 640, skipped 12 already present, 3 over a destroyed skyhook
   0 anomalies, 0 failed system(s)
   every system was verified as it finished; the run is over, and a restart would simply end it - nothing resumes by itself
@@ -489,7 +503,7 @@ Every per-system line, and the closing line, carries how far the run has come an
 long the rest is expected to take, in the same bracket:
 
 ```
-autoSkyHookDeploy v1.0.0: RYQC-I: 9 orbital skyhooks moved, verified 9 at the landing point + 25000 m, 0 anomalies  [10/40 systems done, 30 systems left, about 1 m 40 s remaining]
+autoSkyHookDeploy v1.1.0: RYQC-I: 9 orbital skyhooks moved, verified 9 at the landing point + 25000 m, 0 anomalies  [10/40 systems done, 30 systems left, about 1 m 40 s remaining]
 ```
 
 `X/N systems done` is the system count for every kind of run. `left` counts what the
@@ -544,7 +558,7 @@ The reply says what is about to happen, warns you, and estimates the time:
 
 ```
 /ash align
-autoSkyHookDeploy v1.0.0: all systems with a Skyhook: 6 system(s) to work, 41 Skyhook(s) to move, starting in 15 s, type /ash stop to cancel
+autoSkyHookDeploy v1.1.0: all systems with a Skyhook: 6 system(s) to work, 41 Skyhook(s) to move, starting in 15 s, type /ash stop to cancel
 please stay in game and avoid jumping or logging off until the run finishes; type /ash stop to cancel
   estimated 28 s: 6 systems, 41 planets, 5 x 2000 ms step delay, 15 s countdown (measured 48 ms per planet so far)
 ```
@@ -553,7 +567,7 @@ It is paced exactly like a region run - a countdown, one system per step, every 
 verified against what was written, a 2 s gap - and `/ash stop` cancels it the same way:
 
 ```
-autoSkyHookDeploy v1.0.0: RYQC-I: 9 orbital skyhooks moved (of 9 attempted), 9 verified at the landing point + 25000 m, 0 skipped, 0 destroyed markers, 0 anomalies  [10/40 systems done, 41 skyhooks left, about 1 m 40 s remaining]
+autoSkyHookDeploy v1.1.0: RYQC-I: 9 orbital skyhooks moved (of 9 attempted), 9 verified at the landing point + 25000 m, 0 skipped, 0 destroyed markers, 0 anomalies  [10/40 systems done, 41 skyhooks left, about 1 m 40 s remaining]
 ```
 
 A Skyhook that cannot be moved is reported rather than failing: one whose planet has no
@@ -568,7 +582,7 @@ failed. Markers are counted, never listed: the system line carries the count and
 line explains it, and no marker is ever named one by one.
 
 ```
-autoSkyHookDeploy v1.0.0: LWX-93: 9 orbital skyhooks moved (of 9 attempted), 9 verified at the landing point + 25000 m, 0 skipped, 9 destroyed markers, 0 anomalies  [2/42 systems done, 333 skyhooks left, about 1 m 38 s remaining]
+autoSkyHookDeploy v1.1.0: LWX-93: 9 orbital skyhooks moved (of 9 attempted), 9 verified at the landing point + 25000 m, 0 skipped, 9 destroyed markers, 0 anomalies  [2/42 systems done, 333 skyhooks left, about 1 m 38 s remaining]
     destroyed markers left alone: 9 (a destroyed skyhook stays destroyed until something is deployed on that planet again)
 ```
 
@@ -581,7 +595,7 @@ part of a scene that was **already loaded** says exactly that - it never claims 
 in the system:
 
 ```
-autoSkyHookDeploy v1.0.0: RYQC-I: 0 orbital skyhooks moved (of 10 attempted), 0 verified at the landing point + 25000 m, 10 skipped, 0 destroyed markers, 0 anomalies  [10/40 systems done, 31 skyhooks left, about 1 m 22 s remaining]
+autoSkyHookDeploy v1.1.0: RYQC-I: 0 orbital skyhooks moved (of 10 attempted), 0 verified at the landing point + 25000 m, 10 skipped, 0 destroyed markers, 0 anomalies  [10/40 systems done, 31 skyhooks left, about 1 m 22 s remaining]
   solar system RYQC-I: its scene is loaded and would not accept the move; the vendor unloads an empty scene on its own, so try again later
   skipped: orbital skyhook at RYQC-I I: the loaded scene of its solar system kept its own position
 ```
@@ -590,7 +604,7 @@ A system that holds both a genuine skip and destroyed markers reports the two ap
 with its own evidence:
 
 ```
-autoSkyHookDeploy v1.0.0: LWX-93: 0 orbital skyhooks moved (of 1 attempted), 0 verified at the landing point + 25000 m, 1 skipped, 2 destroyed markers, 0 anomalies  [2/42 systems done, 12 skyhooks left, about 6 s remaining]
+autoSkyHookDeploy v1.1.0: LWX-93: 0 orbital skyhooks moved (of 1 attempted), 0 verified at the landing point + 25000 m, 1 skipped, 2 destroyed markers, 0 anomalies  [2/42 systems done, 12 skyhooks left, about 6 s remaining]
     destroyed markers left alone: 2 (a destroyed skyhook stays destroyed until something is deployed on that planet again)
     skipped: orbital skyhook at LWX-93 II has no usable landing point
 ```
@@ -622,7 +636,7 @@ listed one by one:
 
 ```
 /ash status here
-autoSkyHookDeploy v1.0.0: Jita
+autoSkyHookDeploy v1.1.0: Jita
   Planet I: orbital skyhook present (live skyhook)
   Planet II: free (game-created slot, nothing built on it yet)
   Planet III: free (destroyed skyhook tombstone - a new one may be placed here)
@@ -647,7 +661,7 @@ dropped from the listing:
 
 ```
 /ash status here
-autoSkyHookDeploy v1.0.0: Jita
+autoSkyHookDeploy v1.1.0: Jita
   Planet I: orbital skyhook present (live skyhook)
   Planet V: free
   destroyed markers left alone: 1 (a destroyed skyhook stays destroyed until something is deployed on that planet again)
@@ -666,7 +680,7 @@ and says how many were left out; the counts still cover the whole system:
 
 ```
 /ash status here
-autoSkyHookDeploy v1.0.0: Jita
+autoSkyHookDeploy v1.1.0: Jita
   Planet I: free
   Planet II: free
   4 planet(s): 0 with a skyhook, 0 free over a destroyed skyhook (deployable), 4 free
@@ -678,7 +692,7 @@ A planet id that is not a system, or a system the server has no planets for:
 
 ```
 /ash status 999999999
-autoSkyHookDeploy v1.0.0: solar system 999999999 has no planets (is that a system id?)
+autoSkyHookDeploy v1.1.0: solar system 999999999 has no planets (is that a system id?)
 ```
 
 While a region or align run is in progress the same reply ends with the run's own

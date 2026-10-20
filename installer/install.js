@@ -138,7 +138,7 @@ function resolveRoot(options) {
   if (explicit) {
     const resolved = path.resolve(explicit);
     if (!deployment.isEveJsRoot(resolved)) {
-      fail(`${resolved} does not look like an EveJS 0.12.9 root `
+      fail(`${resolved} does not look like an EveJS root `
         + "(server/index.js and server/src/services/planet/planetOrbitalState.js must exist)");
     }
     return resolved;
@@ -283,6 +283,11 @@ function reportStatus(root, payload, deployments) {
       requirePath: register.containerRequirePath(deployment.MOD_ID),
     });
     out(`Docker     : ${registered ? "registered" : "NOT registered"} (${deployments.docker.entrypoint})`);
+    const ignoreFile = deployments.docker.dockerignore;
+    if (deployment.isFile(ignoreFile)) {
+      const allowlisted = register.hasDockerignoreAllowlist(deployment.readText(ignoreFile));
+      out(`Build ctx  : ${allowlisted ? "mods/ included" : "mods/ EXCLUDED - re-run the installer"} (${ignoreFile})`);
+    }
   }
   if (deployments.native.present) {
     const text = deployment.readText(deployments.native.startServerBat);
@@ -390,6 +395,26 @@ function main(mode = "install") {
         deployment.writeText(file, result.text);
       },
     });
+  }
+
+  // 2b. Docker: the build context has to carry mods/ as well. 261018.1's
+  // .dockerignore is `**` plus an allowlist that does not mention mods/, and the
+  // image is built with `COPY . .`, so without this the preloaded path above
+  // would point at a file the image never received.
+  if (useDocker && deployment.isFile(deployments.docker.dockerignore)) {
+    const file = deployments.docker.dockerignore;
+    const result = register.applyDockerignoreAllowlist(deployment.readText(file));
+    if (!result.ok) {
+      out(`[WARN] ${deployment.DOCKERIGNORE}: ${result.reason}`);
+    } else if (!result.changed) {
+      out(`[SKIP] ${deployment.DOCKERIGNORE}: ${result.reason}`);
+    } else if (options.dryRun) {
+      out(`[PLAN] ${deployment.DOCKERIGNORE}: would add !mods/ and !mods/** so the image includes the payload`);
+    } else {
+      archiveOnce(file);
+      deployment.writeText(file, result.text);
+      out(`[ OK ] ${deployment.DOCKERIGNORE}: added !mods/ and !mods/** so the image includes the payload`);
+    }
   }
 
   // 3. Native: preload the loader from the Windows launcher.

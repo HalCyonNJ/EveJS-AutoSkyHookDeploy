@@ -1,6 +1,6 @@
 # Auto Skyhook Deploy
 
-A server-side loader mod for **EveJS 0.12.9** that conjures **Orbital Skyhooks**
+A server-side loader mod for **EveJS 261018.1** that conjures **Orbital Skyhooks**
 (typeID 81080) onto every planet of a solar system that does not already have
 one, and removes them again.
 
@@ -15,7 +15,7 @@ spellings are just two ways to type the same thing.
 
 | Command | Alias | What it does |
 |---|---|---|
-| `/ash anchor here`<br>`/ash anchor system <systemID>`<br>`/ash anchor region <regionID>` | `/ash a` | Deploy one Skyhook next to **every planet that does not already have one**, in one system or in every sovereignty-claimable system of a region. NPC/faction space is refused for a single system and skipped inside a region. |
+| `/ash anchor here`<br>`/ash anchor system <systemID>`<br>`/ash anchor region <regionID>` | `/ash a` | Deploy one Skyhook next to **every planet that does not already have one**, in one system or in every sovereignty-claimable system of a region. NPC/faction space is refused for a single system and skipped inside a region. **Region runs are docked-only**: see *Before you anchor* below. |
 | `/ash align [here\|system <systemID>\|region <regionID>]` | `/ash al` | Move the Skyhooks that are **already deployed** onto the configured `offsetMeters` - the placement a fresh deploy would produce. With no argument it covers every system that holds a Skyhook, including ones deployed by hand. Paced exactly like a region run, and its per-system line counts Skyhooks left. |
 | `/ash remove <skyhookID>`<br>`/ash remove "<planet name>"` | `/ash r` | Destroy **one** Skyhook, named either by the id the scanner shows and `/ash status` uses, or by the name of the planet it orbits - `/ash remove "RYQC-I III"`, resolved in the caller's own system. |
 | `/ash unanchor here`<br>`/ash unanchor system <systemID>`<br>`/ash unanchor region <regionID>` | `/ash ua` | Destroy **every Skyhook in that scope**, whoever deployed it. A region runs paced, one system at a time. |
@@ -30,6 +30,41 @@ spellings are just two ways to type the same thing.
 who has no staff rights. A `!ash` line is consumed before it is broadcast, so it
 is never shown to anybody else.
 
+## Before you anchor a region: dock first, and expect one slow restart
+
+**A region run only starts while you are docked and online.** Undock, log off, or
+relog during it and it stops immediately at the next step - the systems already
+finished stay committed and verified, nothing is left half-done. A single system
+(`/ash anchor here`, `/ash anchor system <id>`) is a handful of Skyhooks and needs
+none of that: it runs from anywhere, and its boot cost is a moment.
+
+**The first server restart after anchoring a region is slow, and that is
+expected.** A Skyhook conjured here has no raid/silo record, so on the next boot
+the server initialises one for every new Skyhook, one at a time, and each takes
+seconds. A whole region can turn that boot into a very long one. It is not a hang.
+Once the records exist, later restarts are fast again. So: finish the run while
+docked, then restart the game server once yourself, at a time you choose - `/ash`
+and every completed region run say the same thing in a `###WARNING###` block.
+
+## Known upstream cost: lots of Skyhooks slows the game down
+
+This is EveJS **261018.1**, not this mod. Measured on a live server with 917
+Skyhooks in 108 systems:
+
+- the first restart after a region anchor took **24 min 42 s** (the vendor
+  initialises one silo per Skyhook on that boot), later restarts are fast;
+- with 5-11 Skyhooks in a system, an **undock** takes 1.7-2.4 s and a **jump**
+  spends 7.9-9.8 s in the client bind, because every scene entry re-hydrates the
+  system's items and orbitals - about **0.6-0.9 s per Skyhook**;
+- each Skyhook is three `items` rows (the Skyhook, its vendor-created reagent
+  silo, and an `item-custody` receipt), so a 9-Skyhook system carries 37 item
+  rows.
+
+The server is otherwise idle and healthy (0.4 ms median in-process `/health`,
+~9% CPU), and none of that time is this mod: it creates Skyhooks through the
+vendor's own API and does no background work afterwards. The fix belongs
+upstream, in the scene bootstrap and the first-boot silo pass.
+
 ## The one-Skyhook-per-planet rule
 
 A planet that already has any of the following is **occupied and is never built
@@ -38,27 +73,25 @@ on twice**:
 1. a live Skyhook (an orbital record for typeID 81080 with no tombstone);
 2. a **structure-shaped** Skyhook (typeID 81080 is also registered as a
    sovereignty structure, so a second, competing deploy route exists);
-3. a **sovereignty ledger row for a real deployment** - a record under a real
-   item id, or one carrying `deployedItem`, that is not itself a tombstone.
+3. a **sovereignty ledger row for a real deployment** - any record that is not
+   itself a tombstone (EveJS 261018.1 derives these rows from deployed orbitals,
+   so a row only exists when something is built).
 
-Two things are deliberately **not** occupancy, and each is a correction from a
-live test:
+One thing is deliberately **not** occupancy: a **destroyed Skyhook**. Destroying
+one does **not** prevent deploying a new one on that planet. The old orbital
+record is left exactly where it is as history - never deleted, never cleared -
+and the replacement gets its own item id beside it. The reply counts those
+deployments separately.
 
-- the free *slot* row the game mints for every planet of a claimed system that
-  has nothing built on it. It is the room a Skyhook is meant to go in, and
-  `/ash anchor` fills it, which is what makes the command useful in a claimed
-  system.
-- a **destroyed Skyhook**. Destroying one does **not** prevent deploying a new
-  one on that planet. The old record (an orbital tombstone, or a destroyed planet
-  slot) is left exactly where it is as history - never deleted, never cleared -
-  and the replacement gets its own item id beside it. The reply counts those
-  deployments separately.
+EveJS 261018.1 retired the free per-planet *slot* row earlier releases of the
+game minted for claimed systems, so a claimed planet with nothing built on it now
+simply has no row at all. The rule above is unchanged: nothing there means free.
 
 Partially populated systems are the normal case. Every deploy reply states three
 counts, whether it deployed anything or not:
 
 ```
-autoSkyHookDeploy v1.0.0: Jita: deployed 3, skipped 2 already present, 1 over a destroyed skyhook
+autoSkyHookDeploy v1.1.0: Jita: deployed 3, skipped 2 already present, 1 over a destroyed skyhook
   deployed: orbital skyhook at Planet I; orbital skyhook at Planet II; orbital skyhook at Planet III
   over a destroyed skyhook: orbital skyhook at Planet IV (old orbital tombstone - kept as history)
 ```
@@ -67,7 +100,7 @@ If **all** planets are occupied the command fails with a clear error instead of
 reporting a silent success:
 
 ```
-autoSkyHookDeploy v1.0.0: nothing to deploy: Jita: all 5 planets already have a skyhook (5 present); nothing to deploy
+autoSkyHookDeploy v1.1.0: nothing to deploy: Jita: all 5 planets already have a skyhook (5 present); nothing to deploy
 ```
 
 Each Skyhook is placed **just past the planet's warp-in point** - the one spot a
@@ -153,7 +186,7 @@ After installing:
 Confirm the boot line:
 
 ```
-[autoSkyHookDeploy] v1.0.0 loader ready — /ash anchor|align|remove|unanchor|stop|offset|status|help and !ash work for every character
+[autoSkyHookDeploy] v1.1.0 loader ready — /ash anchor|align|remove|unanchor|stop|offset|status|help and !ash work for every character
 ```
 
 Then, in the game: `/ash help`, or `!ash help` from ordinary chat.
@@ -213,7 +246,7 @@ directly. It ends with `N/N passed` and exits 0.
 
 ## Requirements
 
-- EveJS 0.12.9.
+- EveJS 261018.1.
 - Node.js 18 or newer for the installer and the test suite.
 - Nothing else: no client change, no item, no module, no skill.
 

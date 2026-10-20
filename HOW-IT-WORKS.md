@@ -1,8 +1,8 @@
 # How Auto Skyhook Deploy works
 
-This document describes what the mod does to an EveJS 0.12.9 server, which
+This document describes what the mod does to an EveJS 261018.1 server, which
 vendor entry points it uses, and which rules it will not break. Line references
-are to the 0.12.9 tree this mod was developed against
+are to the 261018.1 tree this mod was developed against
 (`server/src/...`, verified against the checkout this mod ships beside).
 
 The mod is a **loader**: it never edits a file on disk. It installs itself by
@@ -28,25 +28,29 @@ rebuilds it from `planetOrbitalState` and deletes keys it does not recognise.
 
 ### The derived-ledger rule
 
-`bootstrapSkyhooksFromSystems` (`sovModernState.js:629`) walks every orbital
+`bootstrapSkyhooksFromSystems` (`sovModernState.js:642`) walks every orbital
 record with `typeID === 81080` (`readDeployedSkyhookOrbitals`,
-`sovModernState.js:757`) and rebuilds `table.skyhooks[key]` from it, stamping
-`deployedItem = true` (`:654`) and carrying `destroyed = destroyed ||
-Boolean(orbital.destroyedAtMs)` (`:663`). It then walks the claimed systems and
-mints a **synthetic slot** for every planet that has no deployed orbital:
-`skyhookID = SKYHOOK_ITEM_ID_OFFSET + planetID`, i.e.
-`1000000000000 + planetID` (`:40`, `:685-689`). Finally it deletes every ledger
-key it did not recognise (`:747-753`).
+`sovModernState.js:710`) and rebuilds `table.skyhooks[key]` from it, stamping
+`deployedItem = true` (`:665`) and carrying `destroyed = destroyed ||
+Boolean(orbital.destroyedAtMs)` (`:674`). It then retires every ledger key it
+does not recognise: a destroyed row is kept as history (`:703`), a raid-retained
+row is settled and destroyed first (`:692-702`), and anything else is deleted
+(`:704-706`).
 
 Two consequences drive this mod's design:
 
 1. **Writing the ledger by hand is pointless.** It is pruned on the next read.
    When the mod wants a row to exist immediately, it asks the vendor to read it
-   (`getSkyhook`, `:1936`; `listLocalSkyhooks`, `:1950`) after the orbital record
-   exists, and the bootstrap produces the row.
-2. **A tombstone is a decision, not an absence.** The synthetic-slot loop skips a
-   slot whose ledger row already has `destroyed === true` (`:713-718`) so a
-   destroyed skyhook is not silently recreated while the system stays claimed.
+   (`getSkyhook`, `:2057`; `listLocalSkyhooks`, `:2071`) after the orbital record
+   exists, and the bootstrap produces the row. A refused read is reported: the
+   vendor only derives a row when the item still matches its orbital exactly
+   (type 81080, flag 0, owner and location in this system, no private scope).
+2. **261018.1 retired the synthetic per-planet slot.** Earlier releases minted a
+   `SKYHOOK_ITEM_ID_OFFSET + planetID` row for every planet of a claimed system;
+   261018.1 has no such constant and no such row, so "nothing there" simply means
+   free and the mod no longer looks for a slot key. A destroyed record is still
+   never recreated, because the bootstrap keeps a destroyed row (`:703`) and the
+   mod treats it as a tombstone rather than occupancy.
 
 ### The one-row-per-planet geometry
 
@@ -261,6 +265,36 @@ presence of a hub.
 - Any direct write to `planetOrbitalState` state, to the sovereignty ledger, or
   to the raw gameplay tables.
 
+### The boot cost, and why anchor needs you docked
+
+A Skyhook conjured here has no `raid`/`silo` record. On the next server boot the
+vendor's `reconcileDurableRaids()` (`server/src/services/sovereignty/skyhookRaidRuntime.js:536`)
+walks every such Skyhook and runs `ensureSilo(initializeRecord(record))` for each
+(`:543`); every call does its own bootstrap check, a synchronous table flush and a
+custody mint, so it costs seconds per Skyhook. A region of hundreds of them turns
+that first boot into a very long one; the second boot finds the records and is fast.
+
+That is why a **region** anchor is gated on the caller: it refuses to start unless
+the session is the live registered session and the ship is docked (the vendor's own
+`sessionRegistry.isRegisteredSession` and `structureLocation.isDockedSession`),
+the run re-checks both on every countdown tick and before every system, and the
+first violation stops it immediately (`abortRunForPresence`) with the completed
+systems already committed. A single-system anchor is not gated: a handful of
+Skyhooks costs the next boot a moment, so it runs from anywhere. The replies carry
+the same explanation in `###WARNING###` blocks, and a completed region run
+recommends one deliberate restart while docked.
+
+The same cost shows up **in game**, and it is measured, not guessed. Every scene
+entry re-hydrates the destination system's items and orbitals
+(`solarSystemScene.js:253/261-299`), and the client bind waits for it
+(`beyonceService.js:4431-4437`). On a live server with 917 Skyhooks (108 systems,
+5-14 per system): undock handler 1.7-2.4 s, bind bootstrap 7.9-9.8 s, roughly
+0.6-0.9 s per Skyhook; the same server was otherwise idle (0.4 ms median `/health`,
+~9% CPU). Each Skyhook is three `items` rows - the hook, its reagent silo (group
+4745) and an `item-custody` receipt (typeID 81933) - so a 9-Skyhook system has 37
+item rows to hydrate. That is the vendor's scene bootstrap, not this mod: after a
+deploy the mod does no background work at all.
+
 ---
 
 ## 3. Enumerating a system
@@ -289,25 +323,14 @@ the reason is reported.
    (`planetOrbitalState.js:828`) contains a record with `typeID === 81080` and no
    tombstone.
 2. **A sovereignty ledger row that is a real deployment.** Read through the
-   vendor (`getSkyhook`, `sovModernState.js:1936`; `listLocalSkyhooks`, `:1950`,
-   which is aimed by `identity.solarSystemID`), never from the raw table. A row
-   counts as occupancy in exactly two cases, and only while it is **not** a
-   tombstone:
-   - its key is **not** that planet's synthetic slot key
-     (`String` of `SKYHOOK_ITEM_ID_OFFSET + planetID`, i.e. `1000000000000 + P`),
-     so it is a record of something actually deployed; or
-   - it carries `deployedItem === true`.
-
-   A row whose key **is** the planet's slot key and which is not
-   `deployedItem: true` is **not** occupancy. That row is the free slot
-   `bootstrapSkyhooksFromSystems` mints for every planet of a claimed system that
-   has no deployed orbital (`sovModernState.js:685-689`, offset declared at
-   `:40`), and it is precisely what a deploy is for: treating it as occupancy
-   would make `/ash anchor` refuse every planet of every claimed system. The
-   distinction is the difference between "the game reserved this planet a slot"
-   and "somebody built here". `/ash status` prints such a planet as
-   `free (game-created slot, nothing built on it yet)` so the two are never
-   confused in a reply.
+   vendor (`getSkyhook`, `sovModernState.js:2057`; `listLocalSkyhooks`, `:2071`,
+   which is aimed by `identity.solarSystemID`), never from the raw table. On
+   261018.1 a row only exists for a real deployment (the bootstrap derives it from
+   an orbital that carries `deployedItem`), so **any row that is not a tombstone is
+   occupancy**. There is no synthetic "free slot" row to tell apart any more: the
+   `1e12 + planetID` slot of earlier releases is gone, and a claimed planet with
+   nothing built on it simply has no row. `/ash status` therefore prints a planet
+   with nothing on it as plain `free`.
 3. **A structure-shaped skyhook.**
    `structureState.listStructuresForSystem(S, { includeDestroyed: true })`
    (`server/src/services/structure/structureState.js:1965`) contains a
@@ -322,14 +345,12 @@ the reason is reported.
 ### A destroyed skyhook is not a "no"
 
 A destroyed orbital record (`destroyedAtMs` set, or `isOrbitalRecordDestroyed`,
-`planetOrbitalState.js:162`) and a destroyed planet slot
-(`1000000000000 + P` with `destroyed === true`) are **history, not occupancy**.
-The live game lets a new Skyhook be placed on a planet whose previous one was
-destroyed, and the vendor's launch path has no uniqueness check at all. What
-`sovModernState.js:713-717` actually says is narrower than it looks: the
-*bootstrap* must not treat the absence of a live row as a request to re-create
-the **default slot** while the system stays claimed. It says nothing about a
-player-driven deploy.
+`planetOrbitalState.js:172`) and a destroyed ledger row are **history, not
+occupancy**. The live game lets a new Skyhook be placed on a planet whose previous
+one was destroyed, and the vendor's launch path has no uniqueness check at all.
+What the bootstrap does on 261018.1 is narrower than it looks: it keeps a destroyed
+ledger row (so the decision is remembered), settles and destroys a raid-retained
+one, and deletes any other row it can no longer derive from a live orbital.
 
 So the mod deploys over a tombstone normally, and keeps the tombstone exactly
 where it is. The old record is never deleted and `destroyedAtMs` is never
@@ -341,9 +362,10 @@ here)` rather than as occupied.
 Three policy checks sit on top of occupancy, two of them optional:
 
 - `requireClaimedSystemOwnership` compares the caller's corporation/alliance with
-  the system's sovereignty owner, which is itself derived from the ledger rows
-  found for that system. A system with no ledger row at all is unclaimed and is
-  refused in that mode.
+  the system's sovereignty owner. On 261018.1 there may be no ledger row at all in
+  a claimed system (no slots any more), so the mod falls back to the system row
+  itself (`gameStore.read("sovereignty", "/systems/<id>")`). Only a system with no
+  sovereignty row is unclaimed, and that is refused in this mode.
 - `maxPlanetsPerCommand` (default 64, range 1..4096) refuses a system with more
   planets than the cap, before anything is created. The same cap bounds one
   `unanchor` and truncates one `status` listing.
@@ -404,28 +426,34 @@ that takes a system are two commands:
   (its `_testing.listPlanetsForSystem` returns planets) is answered the same way,
   which is the mistake worth naming.
 
-Both run the vendor's destruction sequence per id:
+Both run the vendor's destruction sequence per id, in this order:
 
 1. `planetOrbitalState.markOrbitalDestroyed(itemID)`
-   (`planetOrbitalState.js:1119`) writes a tombstone: `state = UNANCHORED`,
-   `destroyedAtMs` set, `conditionState` fully damaged (`:1131-1138`). The row is
-   **kept on purpose** - the vendor's own comment at `:1128-1130` explains that a
-   planet with no record makes `listDefaultCustomsOfficesForSystem` treat it as
-   needing a fresh default.
-2. `spaceRuntime.ensureScene(S)` then
+   (`planetOrbitalState.js:1311`) writes a tombstone: `state = UNANCHORED`,
+   `destroyedAtMs` set, `conditionState` fully damaged. The row is **kept on
+   purpose** - a planet with no record makes
+   `listDefaultCustomsOfficesForSystem` treat it as needing a fresh default.
+2. `sovModernState.destroySkyhooks([itemID])` (`sovModernState.js:2317`) writes
+   the ledger tombstone (`active: false, destroyed: true`).
+3. `spaceRuntime.ensureScene(S)` then
    `spaceRuntime.destroyDynamicInventoryEntity(S, itemID, { suppressExplosion: true })`
    (`.../dynamicEntities.js:239`), which removes the scene entity and the `items`
    row behind it. `DYNAMIC_ENTITY_NOT_FOUND` is treated as success, so a retry
    after a partial failure is safe.
-3. `sovModernState.destroySkyhooks([itemID])` (`sovModernState.js:2193`) writes
-   the ledger tombstone (`active: false, destroyed: true`) immediately instead of
-   waiting for the next bootstrap.
+
+**The ledger step moved ahead of the entity step in 1.1.0, and that is not
+cosmetic.** 261018.1 derives ledger rows from live `deployedItem` orbitals; once the
+`items` row is gone the row can no longer be derived, so a tombstone written
+afterwards is a no-op and the "destroyed is remembered" claim would be false.
+Marking it destroyed while the row is still readable is also what makes the
+vendor's next reconcile keep it (a destroyed row is retained, a stale live one is
+deleted).
 
 The three steps are ordered and each is reported. If step 1 fails, steps 2 and 3
 are **not** run for that id: deleting the item row of a skyhook whose orbital
-record is not tombstoned is how a resurrection starts. If step 2 fails for a
+record is not tombstoned is how a resurrection starts. If step 3 fails for a
 reason other than `DYNAMIC_ENTITY_NOT_FOUND`, the reply says so while steps 1 and
-3 - the durable part - still stand.
+2 - the durable part - still stand.
 
 A skyhook whose orbital record is already a tombstone is left alone and counted in
 its own column (`already destroyed N` in the header, one `destroyed markers left
@@ -788,7 +816,7 @@ export:
   already-joined string gets a newline and the lines, because a sibling loader
   mod may have coerced it first;
 - the wrapper matches its own command and answers it, and calls the previous
-  function for everything else, so `/sov`, `/aud`, `/help` and every other
+  function for everything else, so `/sov`, `/where`, `/help` and every other
   command behave exactly as before;
 - the export itself is checked for a writable property descriptor first. A
   read-only export is left alone and reported, never half-patched.
@@ -850,7 +878,7 @@ instead of a guess.
 4. Wraps the whole install and each individual target patch in `try`/`catch`: a
    loader that throws during `--require` would take the server down with it.
 5. Logs one stable line when it is ready:
-   `[autoSkyHookDeploy] v1.0.0 loader ready - /ash anchor|remove|status|help and
+   `[autoSkyHookDeploy] v1.1.0 loader ready - /ash anchor|remove|status|help and
    !ash work for every character ...`
 
 **Fail closed.** The configuration is read before anything is patched. If any
