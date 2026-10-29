@@ -1,6 +1,6 @@
 # Auto Skyhook Deploy
 
-A server-side loader mod for **EveJS 261018.1** that conjures **Orbital Skyhooks**
+A server-side loader mod for **EveJS 261028.1** (and 261018.1) that conjures **Orbital Skyhooks**
 (typeID 81080) onto every planet of a solar system that does not already have
 one, and removes them again.
 
@@ -91,7 +91,7 @@ Partially populated systems are the normal case. Every deploy reply states three
 counts, whether it deployed anything or not:
 
 ```
-autoSkyHookDeploy v1.1.0: Jita: deployed 3, skipped 2 already present, 1 over a destroyed skyhook
+autoSkyHookDeploy v1.1.1: Jita: deployed 3, skipped 2 already present, 1 over a destroyed skyhook
   deployed: orbital skyhook at Planet I; orbital skyhook at Planet II; orbital skyhook at Planet III
   over a destroyed skyhook: orbital skyhook at Planet IV (old orbital tombstone - kept as history)
 ```
@@ -100,7 +100,7 @@ If **all** planets are occupied the command fails with a clear error instead of
 reporting a silent success:
 
 ```
-autoSkyHookDeploy v1.1.0: nothing to deploy: Jita: all 5 planets already have a skyhook (5 present); nothing to deploy
+autoSkyHookDeploy v1.1.1: nothing to deploy: Jita: all 5 planets already have a skyhook (5 present); nothing to deploy
 ```
 
 Each Skyhook is placed **just past the planet's warp-in point** - the one spot a
@@ -186,7 +186,7 @@ After installing:
 Confirm the boot line:
 
 ```
-[autoSkyHookDeploy] v1.1.0 loader ready — /ash anchor|align|remove|unanchor|stop|offset|status|help and !ash work for every character
+[autoSkyHookDeploy] v1.1.1 loader ready — /ash anchor|align|remove|unanchor|stop|offset|status|help and !ash work for every character
 ```
 
 Then, in the game: `/ash help`, or `!ash help` from ordinary chat.
@@ -246,7 +246,7 @@ directly. It ends with `N/N passed` and exits 0.
 
 ## Requirements
 
-- EveJS 261018.1.
+- EveJS 261028.1 (261018.1 also supported).
 - Node.js 18 or newer for the installer and the test suite.
 - Nothing else: no client change, no item, no module, no skill.
 

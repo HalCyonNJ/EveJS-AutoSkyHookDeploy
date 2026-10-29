@@ -838,7 +838,7 @@ test("launcher manifest matches the loader version", () => {
   assert.deepStrictEqual([...manifest.supportedBackends], ["native", "docker"]);
   assert.strictEqual(manifest.activation.strategy, "loader_rename");
   assert.strictEqual(manifest.restart, "game_server");
-  assert.deepStrictEqual([...manifest.compatibility.evejsVersions], ["261018.1"]);
+  assert.deepStrictEqual([...manifest.compatibility.evejsVersions], ["261018.1", "261028.1"]);
 });
 
 test("a configuration problem installs no hooks at all", () => {

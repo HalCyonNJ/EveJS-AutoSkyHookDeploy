@@ -4,6 +4,17 @@ All notable changes to this mod are recorded here. One section per release; the
 version matches `MOD_VERSION` in `loader.js` and the version in
 `evejs-launcher.mod.json`.
 
+## 1.1.1 - 2026-10-29
+
+**Compatibility only: re-checked against EveJS 261028.1.**
+
+- All vendor modules the mod calls still exist with unchanged signatures; the
+  functions it uses in `sovModernState`, `itemStore`, `planetOrbitalState`,
+  `structureState`, `characterState` and `sessionRegistry` are byte-identical to
+  261018.1, and `chatCommands`/`chatRuntime` keep the same overlay seams.
+- `compatibility.evejsVersions` now lists `261018.1` and `261028.1`.
+- No behaviour change, no server source edit; an in-game smoke test is still
+  recommended after installation.
 ## 1.1.0 - 2026-10-20
 
 **Re-anchored on EveJS 261018.1, where the sovereignty ledger no longer has a free
