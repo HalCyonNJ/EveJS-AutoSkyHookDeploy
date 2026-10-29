@@ -486,8 +486,8 @@ ${result.stderr}`);
       );
       const updateOutput = run("update.js", []);
       assert.match(updateOutput, /Updater/u);
-      assert.match(updateOutput, /Installed {2}: v1\.1\.1/u);
-      assert.match(updateOutput, /Updating to: v1\.1\.1/u);
+      assert.match(updateOutput, /Installed {2}: v1\.1\.2/u);
+      assert.match(updateOutput, /Updating to: v1\.1\.2/u);
 
       run("install.js", []);
       assert.deepStrictEqual(
@@ -516,7 +516,7 @@ ${result.stderr}`);
       assert.match(statusOutput, /Docker {5}: registered/u);
       assert.match(statusOutput, /Native {5}: registered/u);
       assert.match(statusOutput, /Build ctx {2}: mods\/ included/u);
-      assert.match(statusOutput, /Version {4}: installed v1\.1\.1, payload v1\.1\.1/u);
+      assert.match(statusOutput, /Version {4}: installed v1\.1\.2, payload v1\.1\.2/u);
 
       const dryRun = spawnSync(
         process.execPath,

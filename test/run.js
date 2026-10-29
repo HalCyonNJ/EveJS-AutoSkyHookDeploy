@@ -969,13 +969,13 @@ test("bad input is answered with text, not an exception", () => {
     ["reanchor here", /unknown command "reanchor"/u],
     ["align reanchor", /unknown command "reanchor"/u],
     ["align ra", /unknown command "ra"/u],
-    ["anchor", /\/ash anchor needs here, system <systemID> or region <regionID>/u],
+    ["anchor", /\/ash anchor needs here, system SYSTEMID or region REGIONID/u],
     ["anchor region", /\/ash region needs a region id/u],
     ["anchor region mars", /is not a region id/u],
     ["anchor system", /\/ash system needs a system id/u],
     ["anchor system mars", /is not a solar system id/u],
     ["remove", /\/ash remove needs the id of one Skyhook/u],
-    ["unanchor", /\/ash unanchor needs here, system <systemID> or region <regionID>/u],
+    ["unanchor", /\/ash unanchor needs here, system SYSTEMID or region REGIONID/u],
     ["offset nonsense", /is not an offset/u],
     ["anchor mars", /is not a solar system id/u],
     ["anchor 0", /positive number/u],
@@ -4632,7 +4632,7 @@ test("the /ash overlay appends to help text that is already a string", () => {
   const upstream = createChatUpstream({ helpText: "/help\n/motd" });
   chatCommand.install(upstream, { runtime, config });
   assert.strictEqual(typeof upstream.COMMANDS_HELP_TEXT, "string");
-  assert.match(upstream.COMMANDS_HELP_TEXT, /\/help\n\/motd\n\/ash anchor here\|system <systemID>\|region <regionID>/u);
+  assert.match(upstream.COMMANDS_HELP_TEXT, /\/help\n\/motd\n\/ash anchor here|system SYSTEMID|region REGIONID/u);
 });
 
 test("the /ash overlay gives up on a non-writable export or help text", () => {

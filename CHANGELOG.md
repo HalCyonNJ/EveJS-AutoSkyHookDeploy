@@ -4,6 +4,16 @@ All notable changes to this mod are recorded here. One section per release; the
 version matches `MOD_VERSION` in `loader.js` and the version in
 `evejs-launcher.mod.json`.
 
+## 1.1.2 - 2026-10-29
+
+**Fix the help/error placeholders that the chat client swallowed.**
+
+- Chat renders `<systemID>`, `<regionID>`, `<skyhookID>`, `<planet name>` and
+  `<value>` as unknown HTML tags, so `/ash help` showed broken examples such as
+  `/ash remove |""` and `/ash anchor here|system |region`.
+- Those placeholders are now plain words (`SYSTEMID`, `REGIONID`, `SKYHOOKID`,
+  `PLANET NAME`, `VALUE`); no command syntax changed.
+- Compatibility with 261028.1 is unchanged.
 ## 1.1.1 - 2026-10-29
 
 **Compatibility only: re-checked against EveJS 261028.1.**
