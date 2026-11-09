@@ -4,6 +4,20 @@ All notable changes to this mod are recorded here. One section per release; the
 version matches `MOD_VERSION` in `loader.js` and the version in
 `evejs-launcher.mod.json`.
 
+## 1.1.5 - 2026-11-09
+
+**Live fix, round two: 1.1.4's direct path did not render - use the vendor's `/help` path.**
+
+- 1.1.4 delivered through `xmppStubServer.sendSessionSystemMessage(session, msg, null)`
+  (the client's last room). The log showed `delivered via direct`, but the client
+  rendered nothing, while the vendor's own `/help` reply (chatHub + Local channel) did
+  render in the same session.
+- Replies and follow-ups now go through `chatHub.sendSystemMessage(session, msg, null)`:
+  the exact path `/help` uses. The client-supplied feedback channel is ignored - 1.1.3
+  passed it through and the reply never rendered.
+- Log line per command: `/ash <args>: N chars, delivered via chat-hub`.
+- No change to planning, deployment or the remove path.
+
 ## 1.1.4 - 2026-11-09
 
 **Live fix: `/ash` replies and region-run progress were invisible while docked.**

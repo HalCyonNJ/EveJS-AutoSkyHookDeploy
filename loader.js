@@ -10,7 +10,7 @@ const chatCommand = require("./lib/chatCommand");
 const plainChat = require("./lib/plainChat");
 const { createRuntime, createServerDeps } = require("./lib/runtime");
 
-const MOD_VERSION = "1.1.4";
+const MOD_VERSION = "1.1.5";
 const MOD_DIR = __dirname;
 const RUNTIME_ROOT = path.resolve(MOD_DIR, "../..");
 const LOG_PREFIX = "[autoSkyHookDeploy]";
@@ -104,30 +104,29 @@ let followUpSender = null;
 let chatRuntimeFilename = null;
 let hubSessionKey = null;
 let hubSender = null;
-let directSender = null;
+let chatSender = null;
 
-// Deliver a system message straight to the client's chat connection, bypassing the
-// room the vendor would otherwise pick. Required lazily: doing it while the loader
-// evaluates would pull the chat server into the preload.
-function createDirectSender(runtimeRoot) {
-  let sender = null;
+// Deliver a system message through the vendor's chat hub with the Local channel, the
+// exact path the vendor's own `/help` reply uses (proven to render). `chatHub` is
+// required lazily: doing it while the loader evaluates would pull the chat server into
+// the preload. The client-supplied feedback channel is deliberately ignored - 1.1.3
+// passed it through and the message vanished (2026-11-09).
+function createChatSender(runtimeRoot) {
+  let hub = null;
   let attempted = false;
-  return function sendDirect(session, message) {
+  return function sendThroughHub(session, message) {
     if (!attempted) {
       attempted = true;
       try {
-        const xmpp = require(path.join(
-          runtimeRoot, "server", "src", "services", "chat", "xmppStubServer.js",
+        hub = require(path.join(
+          runtimeRoot, "server", "src", "services", "chat", "chatHub.js",
         ));
-        sender = typeof xmpp.sendSessionSystemMessage === "function"
-          ? xmpp.sendSessionSystemMessage
-          : null;
       } catch (error) {
-        logError(`direct chat delivery is unavailable: ${error && error.message}`);
+        logError(`chat hub delivery is unavailable: ${error && error.message}`);
       }
     }
-    if (!sender) return false;
-    sender(session, message, null);
+    if (!hub || typeof hub.sendSystemMessage !== "function") return false;
+    hub.sendSystemMessage(session, message, null);
     return true;
   };
 }
@@ -141,11 +140,11 @@ function deliveryTargets() {
 function deliverFollowUp(session, message) {
   // 1. The client's own chat connection: it reaches every connected session, whatever
   //    chat windows happen to be open.
-  if (directSender) {
+  if (chatSender) {
     try {
-      if (directSender(session, message)) return true;
+      if (chatSender(session, message)) return true;
     } catch (error) {
-      logError(`direct chat delivery refused a follow-up message: ${error && error.message}`);
+      logError(`chat hub delivery refused a follow-up message: ${error && error.message}`);
     }
   }
   // 2. The hub this session's command arrived on.
@@ -247,7 +246,7 @@ function install(options = {}) {
     logError: (message, error) => logError(message, error),
   });
   const targetMap = buildTargetMap(runtimeRoot, options);
-  directSender = createDirectSender(runtimeRoot);
+  chatSender = createChatSender(runtimeRoot);
   // The lazy fallback needs the chatRuntime filename at module scope: reaching for
   // `targetMap` inside a module-level function was the live bug this replaces.
   const chatRuntimeTarget = [...targetMap.values()].find((entry) => entry.key === "chatRuntime");
@@ -276,7 +275,9 @@ function install(options = {}) {
         logError: (message) => logError(message),
         // The reply goes straight to the client's chat connection: a docked pilot with
         // no Local window open never saw a hub-addressed message (2026-11-09).
-        deliver: (session, message) => directSender(session, message),
+        // Same path as the vendor's own `/help` reply: hub + Local channel, ignoring
+        // the client-supplied feedback channel (1.1.3 sent there and nothing rendered).
+        deliver: (session, message) => chatSender(session, message),
         onDelivered: (argument, message, via) => log(
           `/ash ${argument || "help"}: ${message.length} chars, delivered via ${via}`,
         ),

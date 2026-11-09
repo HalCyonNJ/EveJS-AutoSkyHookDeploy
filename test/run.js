@@ -4655,7 +4655,7 @@ test("the /ash overlay chains to the previous handler for everything else", () =
   assert.strictEqual(upstream.seen.length, 1, "the previous handler must have run for /motd");
 });
 
-test("the /ash reply prefers the client's own chat connection", () => {
+test("the /ash reply prefers the vendor chat-hub path", () => {
   const { fixture, deps } = createFixture();
   const runtime = createRuntimeWith(fixture, deps);
   const config = configModule.load(modDir, {});
@@ -4678,7 +4678,7 @@ test("the /ash reply prefers the client's own chat connection", () => {
   assert.strictEqual(delivered.length, 1, "the direct path must deliver the reply");
   assert.match(delivered[0], /autoSkyHookDeploy - \/ash/u);
   assert.strictEqual(hubCalls.length, 0, "the hub must not be used when direct delivery works");
-  assert.deepStrictEqual(reports, [{ argument: "help", via: "direct" }]);
+  assert.deepStrictEqual(reports, [{ argument: "help", via: "chat-hub" }]);
 });
 
 test("the /ash reply falls back to the hub when direct delivery is unavailable", () => {
