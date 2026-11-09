@@ -838,7 +838,7 @@ test("launcher manifest matches the loader version", () => {
   assert.deepStrictEqual([...manifest.supportedBackends], ["native", "docker"]);
   assert.strictEqual(manifest.activation.strategy, "loader_rename");
   assert.strictEqual(manifest.restart, "game_server");
-  assert.deepStrictEqual([...manifest.compatibility.evejsVersions], ["261018.1", "261028.1"]);
+  assert.deepStrictEqual([...manifest.compatibility.evejsVersions], ["261018.1", "261028.1", "261108.1"]);
 });
 
 test("a configuration problem installs no hooks at all", () => {
@@ -1640,6 +1640,36 @@ test("remove: one Skyhook by id, and nothing else", () => {
   assert.deepStrictEqual(
     fixture.calls.filter((entry) => entry.fn === "destroySkyhooks").map((entry) => entry.skyhookIDs),
     [[1000000000002]],
+  );
+});
+
+test("remove: 261108.1 has no ledger tombstone, and the reply says so", () => {
+  const { fixture, deps } = createFixture({
+    orbitals: [orbital(40009001, 1000000000001)],
+  });
+  // 261108.1 removed sovModernState.destroySkyhooks; the vendor retires the
+  // Skyhook from the orbital tombstone alone (skyhookCleanup.retireSkyhook).
+  const sov = deps.getSovModernState();
+  const withoutLedgerTombstone = { ...sov };
+  delete withoutLedgerTombstone.destroySkyhooks;
+  const runtime = createRuntimeWith(fixture, {
+    ...deps,
+    getSovModernState: () => withoutLedgerTombstone,
+  });
+  const config = configModule.load(modDir, {});
+  const message = chatCommand.handleCommand(runtime, config, session(), "remove 1000000000001").message;
+
+  assert.match(message, /Jita: destroyed 1, already destroyed 0, left alone 0/u, message);
+  assert.match(message, /ledger row retired with the orbital tombstone/u, message);
+  assert.strictEqual(
+    fixture.calls.some((entry) => entry.fn === "destroySkyhooks"),
+    false,
+    "the removed vendor export must not be called",
+  );
+  assert.strictEqual(
+    fixture.calls.some((entry) => entry.fn === "destroyDynamicInventoryEntity"),
+    true,
+    "the scene entity and its item row are still removed",
   );
 });
 
@@ -5319,7 +5349,6 @@ test("the live vendor tree still exposes every entry point this mod calls", () =
       /function bootstrapSkyhooksFromSystems\(/u,
       /function getSkyhook\(skyhookID, identity\)/u,
       /function listLocalSkyhooks\(identity\)/u,
-      /function destroySkyhooks\(skyhookIDs\)/u,
     ]],
     ["server/src/services/structure/structureState.js", [
       /function listStructuresForSystem\(solarSystemID, options = \{\}\)/u,
@@ -5363,7 +5392,7 @@ test("the live vendor tree still refuses what this mod refuses to call", () => {
     path.join(live, "server", "src", "services", "sovereignty", "sovModernState.js"),
     "utf8",
   );
-  assert.match(sov, /destroyed: true,/u, "the ledger tombstone flag must still exist");
+  assert.match(sov, /destroyed: value\.destroyed === true,/u, "the ledger tombstone flag must still exist");
   // 261018.1 keeps a destroyed row (history) and prunes a stale live one; a
   // raid-retained row is settled before it is kept.
   assert.match(sov, /if \(oldSkyhook\.destroyed === true\) continue;/u);

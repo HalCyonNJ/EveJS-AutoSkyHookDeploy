@@ -4,6 +4,20 @@ All notable changes to this mod are recorded here. One section per release; the
 version matches `MOD_VERSION` in `loader.js` and the version in
 `evejs-launcher.mod.json`.
 
+## 1.1.3 - 2026-11-09
+
+**Compatibility with EveJS 261108.1: the ledger tombstone is gone, the orbital one stays.**
+
+- 261108.1 removed `sovModernState.destroySkyhooks` (and `acquireSkyhooks`), so the
+  second step of the removal sequence no longer exists. The mod now detects the
+  export and retires a Skyhook from the orbital tombstone alone, the same shape the
+  vendor's own `skyhookCleanup.retireSkyhook` uses. The reply says which path ran -
+  on 261108.1 it reads "ledger row retired with the orbital tombstone".
+- Every other vendor entry point the mod calls is still present in 261108.1; the
+  live-tree test verifies each one, including `destroyDynamicInventoryEntity`.
+- `compatibility.evejsVersions` now lists `261018.1`, `261028.1` and `261108.1`.
+- No behaviour change on 261018.1 or 261028.1.
+
 ## 1.1.2 - 2026-10-29
 
 **Fix the help/error placeholders that the chat client swallowed.**
