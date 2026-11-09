@@ -30,6 +30,17 @@ spellings are just two ways to type the same thing.
 who has no staff rights. A `!ash` line is consumed before it is broadcast, so it
 is never shown to anybody else.
 
+## At a glance
+
+- 🛰️ **Conjure Skyhooks without items or a ship.** `/ash anchor here` puts one Orbital Skyhook (typeID 81080) next to every planet of the current system that does not have one; nothing is consumed and you do not have to fly there.
+- 🌍 **Whole systems or whole regions.** `/ash anchor system <id>` and `/ash anchor region <id>` work the same way, one system at a time, with a countdown, a per-system result and a time estimate you can cancel with `/ash stop`.
+- 🧹 **Remove them again.** `/ash remove <id>` destroys one Skyhook (also by planet name), `/ash unanchor here|system|region` clears a whole scope, and `/ash status` reads every planet back as live, free, or free over a destroyed tombstone.
+- 🚀 **Placement matches the game.** A conjured Skyhook sits on the planet's own warp-in point plus the configured offset (default 25 km), so a ship warping in lands beside it instead of inside it.
+- 🐢 **Docked-only region runs.** A region or align run refuses to start unless you are docked and online, stops the moment you undock or disconnect, and warns that the next restart will be slow - every new Skyhook is initialised on that boot.
+- 🧱 **One live Skyhook per planet.** A planet that already has a live or structure-shaped Skyhook is never built on twice, and NPC/faction space is refused for a single system and skipped inside a region.
+- 💬 **Both spellings work for every character.** `/ash ...` and `!ash ...` do the same thing and need no staff rights; the `!ash` line is consumed before it is broadcast.
+- 🖥️ **Server-side only.** Two chat entry points are overlaid in memory at startup; no vendor file is edited on disk and no client overlay is shipped.
+
 ## Before you anchor a region: dock first, and expect one slow restart
 
 **A region run only starts while you are docked and online.** Undock, log off, or
