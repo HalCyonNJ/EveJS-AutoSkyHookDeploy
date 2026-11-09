@@ -10,7 +10,7 @@ const chatCommand = require("./lib/chatCommand");
 const plainChat = require("./lib/plainChat");
 const { createRuntime, createServerDeps } = require("./lib/runtime");
 
-const MOD_VERSION = "1.1.3";
+const MOD_VERSION = "1.1.4";
 const MOD_DIR = __dirname;
 const RUNTIME_ROOT = path.resolve(MOD_DIR, "../..");
 const LOG_PREFIX = "[autoSkyHookDeploy]";
@@ -82,16 +82,21 @@ function buildTargetMap(runtimeRoot, options = {}) {
 }
 
 // A region run answers with follow-up messages long after the command returned, so the
-// loader needs a delivery path that works for the session that started it. Two are
+// loader needs a delivery path that works for the session that started it. Three are
 // kept, in this order:
 //
-//   1. the chat hub the vendor handed to `executeChatCommand(session, message,
-//      chatHub)`. The command's own reply travels through it, so it is the one channel
-//      proven to reach that session. `chatCommand.install` reports every hub it sees.
-//   2. the vendor's `broadcastLocalMessage`, captured when the chatRuntime seam is
-//      patched - the ordinary-chat `!ash` path has no hub.
+//   1. the client's own chat connection (`xmppStubServer.sendSessionSystemMessage` with
+//      no room): it addresses the room the client last used, so it reaches a docked
+//      pilot whose Local window is not open. A system message aimed at a room the
+//      client is not showing is dropped silently - on 2026-11-09 every /ash reply and
+//      every region-run follow-up vanished this way while the caller was docked.
+//   2. the chat hub the vendor handed to `executeChatCommand(session, message,
+//      chatHub)`; the command's own reply travels through it.
+//   3. the vendor's `broadcastLocalMessage`, captured when the chatRuntime seam is
+//      patched - the ordinary-chat `!ash` path has no hub. It speaks into Local, so it
+//      only shows when that window is open.
 //
-// If neither is available the message is logged at error level (never behind verbose)
+// If none is available the message is logged at error level (never behind verbose)
 // and reported as undelivered, so the run can stop instead of stalling silently.
 let followUpSender = null;
 // Assigned by `install()`; the lazy path must not reach for a binding that only exists
@@ -99,6 +104,33 @@ let followUpSender = null;
 let chatRuntimeFilename = null;
 let hubSessionKey = null;
 let hubSender = null;
+let directSender = null;
+
+// Deliver a system message straight to the client's chat connection, bypassing the
+// room the vendor would otherwise pick. Required lazily: doing it while the loader
+// evaluates would pull the chat server into the preload.
+function createDirectSender(runtimeRoot) {
+  let sender = null;
+  let attempted = false;
+  return function sendDirect(session, message) {
+    if (!attempted) {
+      attempted = true;
+      try {
+        const xmpp = require(path.join(
+          runtimeRoot, "server", "src", "services", "chat", "xmppStubServer.js",
+        ));
+        sender = typeof xmpp.sendSessionSystemMessage === "function"
+          ? xmpp.sendSessionSystemMessage
+          : null;
+      } catch (error) {
+        logError(`direct chat delivery is unavailable: ${error && error.message}`);
+      }
+    }
+    if (!sender) return false;
+    sender(session, message, null);
+    return true;
+  };
+}
 
 function deliveryTargets() {
   return { hub: hubSender, sender: followUpSender, filename: chatRuntimeFilename };
@@ -107,7 +139,16 @@ function deliveryTargets() {
 // Deliver one follow-up message (a countdown tick, a per-system result or the summary
 // of a paced region run). Returns true only when something actually took it.
 function deliverFollowUp(session, message) {
-  // 1. The hub this session's command arrived on.
+  // 1. The client's own chat connection: it reaches every connected session, whatever
+  //    chat windows happen to be open.
+  if (directSender) {
+    try {
+      if (directSender(session, message)) return true;
+    } catch (error) {
+      logError(`direct chat delivery refused a follow-up message: ${error && error.message}`);
+    }
+  }
+  // 2. The hub this session's command arrived on.
   const key = session && (session.characterID || session.charid || session.characterId);
   if (hubSender && (key == null || hubSessionKey == null || String(key) === String(hubSessionKey))) {
     try {
@@ -206,6 +247,7 @@ function install(options = {}) {
     logError: (message, error) => logError(message, error),
   });
   const targetMap = buildTargetMap(runtimeRoot, options);
+  directSender = createDirectSender(runtimeRoot);
   // The lazy fallback needs the chatRuntime filename at module scope: reaching for
   // `targetMap` inside a module-level function was the live bug this replaces.
   const chatRuntimeTarget = [...targetMap.values()].find((entry) => entry.key === "chatRuntime");
@@ -232,6 +274,12 @@ function install(options = {}) {
         runtime,
         config,
         logError: (message) => logError(message),
+        // The reply goes straight to the client's chat connection: a docked pilot with
+        // no Local window open never saw a hub-addressed message (2026-11-09).
+        deliver: (session, message) => directSender(session, message),
+        onDelivered: (argument, message, via) => log(
+          `/ash ${argument || "help"}: ${message.length} chars, delivered via ${via}`,
+        ),
         // Every hub the vendor hands to a slash command is recorded: the command's own
         // reply travels through it, which makes it the proven channel for follow-ups.
         onHub: (session, chatHub) => {

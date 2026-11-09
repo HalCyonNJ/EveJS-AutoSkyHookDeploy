@@ -4,6 +4,22 @@ All notable changes to this mod are recorded here. One section per release; the
 version matches `MOD_VERSION` in `loader.js` and the version in
 `evejs-launcher.mod.json`.
 
+## 1.1.4 - 2026-11-09
+
+**Live fix: `/ash` replies and region-run progress were invisible while docked.**
+
+- Every `/ash` reply and every paced follow-up (countdown tick, per-system result,
+  summary) was delivered to the Local chat room through the vendor hub. A pilot docked
+  at a structure with no Local window open saw nothing: the command itself ran (68
+  Skyhooks were deployed in the live run) but the client displayed no reply and no
+  progress.
+- Replies and follow-ups now go straight to the client's own chat connection
+  (`xmppStubServer.sendSessionSystemMessage` with the client's last room), with the
+  vendor hub and the Local broadcaster kept as fallbacks.
+- The loader logs one line per `/ash` command (`/ash <args>: <n> chars, delivered via
+  direct|hub|none`) so a delivery problem is visible in `docker compose logs`.
+- No change to planning, deployment or the remove path.
+
 ## 1.1.3 - 2026-11-09
 
 **Compatibility with EveJS 261108.1: the ledger tombstone is gone, the orbital one stays.**

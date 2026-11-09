@@ -4655,6 +4655,69 @@ test("the /ash overlay chains to the previous handler for everything else", () =
   assert.strictEqual(upstream.seen.length, 1, "the previous handler must have run for /motd");
 });
 
+test("the /ash reply prefers the client's own chat connection", () => {
+  const { fixture, deps } = createFixture();
+  const runtime = createRuntimeWith(fixture, deps);
+  const config = configModule.load(modDir, {});
+  const upstream = createChatUpstream();
+  const delivered = [];
+  const hubCalls = [];
+  const chatHub = { sendSystemMessage: (...args) => hubCalls.push(args) };
+  const reports = [];
+  chatCommand.install(upstream, {
+    runtime,
+    config,
+    deliver: (session, message) => { delivered.push(message); return true; },
+    onDelivered: (argument, message, via) => reports.push({ argument, via }),
+  });
+
+  const result = upstream.executeChatCommand(session(), "/ash help", chatHub, {
+    emitChatFeedback: true,
+  });
+  assert.strictEqual(result.handled, true);
+  assert.strictEqual(delivered.length, 1, "the direct path must deliver the reply");
+  assert.match(delivered[0], /autoSkyHookDeploy - \/ash/u);
+  assert.strictEqual(hubCalls.length, 0, "the hub must not be used when direct delivery works");
+  assert.deepStrictEqual(reports, [{ argument: "help", via: "direct" }]);
+});
+
+test("the /ash reply falls back to the hub when direct delivery is unavailable", () => {
+  const { fixture, deps } = createFixture();
+  const runtime = createRuntimeWith(fixture, deps);
+  const config = configModule.load(modDir, {});
+  const upstream = createChatUpstream();
+  const hubCalls = [];
+  const chatHub = { sendSystemMessage: (...args) => hubCalls.push(args) };
+  chatCommand.install(upstream, {
+    runtime,
+    config,
+    deliver: () => false,
+  });
+
+  const result = upstream.executeChatCommand(session(), "/ash help", chatHub, {
+    emitChatFeedback: true,
+  });
+  assert.strictEqual(result.handled, true);
+  assert.strictEqual(hubCalls.length, 1, "the hub is the fallback when the direct path declines");
+});
+
+test("the /ash reply is never sent twice", () => {
+  const { fixture, deps } = createFixture();
+  const runtime = createRuntimeWith(fixture, deps);
+  const config = configModule.load(modDir, {});
+  const upstream = createChatUpstream();
+  let direct = 0;
+  const hubCalls = [];
+  chatCommand.install(upstream, {
+    runtime,
+    config,
+    deliver: () => { direct += 1; return true; },
+  });
+  upstream.executeChatCommand(session(), "/ash help", { sendSystemMessage: (...a) => hubCalls.push(a) }, {});
+  assert.strictEqual(direct, 1);
+  assert.strictEqual(hubCalls.length, 0);
+});
+
 test("the /ash overlay appends to help text that is already a string", () => {
   const { fixture, deps } = createFixture();
   const runtime = createRuntimeWith(fixture, deps);
