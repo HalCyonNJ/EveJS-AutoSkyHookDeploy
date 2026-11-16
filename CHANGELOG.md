@@ -4,6 +4,20 @@ All notable changes to this mod are recorded here. One section per release; the
 version matches `MOD_VERSION` in `loader.js` and the version in
 `evejs-launcher.mod.json`.
 
+## 1.1.6 - 2026-11-16
+
+**Compatibility only: re-checked against EveJS 261115.2.**
+
+- Every vendor entry point this mod calls is still present in 261115.2: the chat
+  seams (`executeChatCommand`, `broadcastLocalMessage`/`sendChannelMessage`),
+  `sovModernState` (`getSkyhook`, `listLocalSkyhooks`, same destroyed-row
+  semantics - the module is byte-identical to 261108.1), `space/runtime.js`
+  (`runtimeExports`, `destroyDynamicInventoryEntity`), `warpInPointParity`,
+  `structureState`, `planetOrbitalState` and `itemStore`. The live-tree test
+  passes unchanged (147/147).
+- `compatibility.evejsVersions` now also lists `261115.2`.
+- No behaviour change, no server source edit.
+
 ## 1.1.5 - 2026-11-09
 
 **Live fix, round two: 1.1.4's direct path did not render - use the vendor's `/help` path.**
