@@ -4,6 +4,20 @@ All notable changes to this mod are recorded here. One section per release; the
 version matches `MOD_VERSION` in `loader.js` and the version in
 `evejs-launcher.mod.json`.
 
+## 1.1.7 - 2026-11-17
+
+**Live fix: 261115.2 moved client slash commands behind `executeClientChatCommand`.**
+
+- 261115.2 added `executeClientChatCommand` in `chatCommands.js`: `slashService`,
+  `lscService` and `xmppStubServer` now call it instead of `executeChatCommand`, and
+  it gates player commands against an allowlist before delegating. The 1.1.6
+  overlay only wrapped `executeChatCommand`, so `/ash` never reached it: the gate
+  refused it as "not a player command" and the reply was swallowed.
+- The overlay now wraps **both** exports (`executeChatCommand` and, when present,
+  `executeClientChatCommand`), so `/ash` is handled before the gate and every other
+  command still goes through the vendor gate untouched. `!ash` is unaffected.
+- Log line per command unchanged: `/ash <args>: N chars, delivered via chat-hub`.
+
 ## 1.1.6 - 2026-11-16
 
 **Compatibility only: re-checked against EveJS 261115.2.**

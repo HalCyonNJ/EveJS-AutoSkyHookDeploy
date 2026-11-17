@@ -4617,6 +4617,14 @@ function createChatUpstream(options = {}) {
     },
     seen,
   };
+  if (options.clientDispatcher) {
+    // 261115.2: client routes call executeClientChatCommand, which gates player
+    // commands and then delegates to executeChatCommand inside the vendor module.
+    upstream.executeClientChatCommand = function clientDispatcher(session, rawMessage, chatHub) {
+      seen.push({ session, rawMessage, chatHub, via: "client" });
+      return { handled: true, message: `gate:${rawMessage}` };
+    };
+  }
   if (options.commandsReadOnly) {
     Object.defineProperty(upstream, "AVAILABLE_SLASH_COMMANDS", {
       value: Object.freeze(["help"]),
@@ -4716,6 +4724,32 @@ test("the /ash reply is never sent twice", () => {
   upstream.executeChatCommand(session(), "/ash help", { sendSystemMessage: (...a) => hubCalls.push(a) }, {});
   assert.strictEqual(direct, 1);
   assert.strictEqual(hubCalls.length, 0);
+});
+
+test("the /ash overlay wraps the 261115.2 client dispatcher as well", () => {
+  const { fixture, deps } = createFixture();
+  const runtime = createRuntimeWith(fixture, deps);
+  const config = configModule.load(modDir, {});
+  const upstream = createChatUpstream({ clientDispatcher: true });
+  chatCommand.install(upstream, { runtime, config });
+
+  assert.strictEqual(typeof upstream.executeClientChatCommand, "function");
+  assert.deepStrictEqual(
+    [...upstream[chatCommand.OVERLAY_MARKER].exports],
+    ["executeChatCommand", "executeClientChatCommand"],
+  );
+
+  const hubCalls = [];
+  const chatHub = { sendSystemMessage: (target, message, channel) => hubCalls.push([message, channel]) };
+  const ours = upstream.executeClientChatCommand(session(), "/ash status here", chatHub, {});
+  assert.strictEqual(ours.handled, true);
+  assert.match(ours.message, /autoSkyHookDeploy v1\.0\.0/u);
+  assert.strictEqual(hubCalls.length, 1);
+
+  const theirs = upstream.executeClientChatCommand(session(), "/motd", chatHub, {});
+  assert.strictEqual(theirs.message, "gate:/motd", "other commands still go through the vendor gate");
+  assert.strictEqual(upstream.seen.length, 1);
+  assert.strictEqual(upstream.seen[0].via, "client");
 });
 
 test("the /ash overlay appends to help text that is already a string", () => {
@@ -5418,6 +5452,7 @@ test("the live vendor tree still exposes every entry point this mod calls", () =
     ]],
     ["server/src/services/chat/chatCommands.js", [
       /function executeChatCommand\(session, rawMessage, chatHub, options = \{\}\)/u,
+      /function executeClientChatCommand\(session, rawMessage, chatHub, options = \{\}\)/u,
       /AVAILABLE_SLASH_COMMANDS,/u,
       /COMMANDS_HELP_TEXT,/u,
     ]],
