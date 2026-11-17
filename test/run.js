@@ -839,6 +839,14 @@ test("launcher manifest matches the loader version", () => {
   assert.strictEqual(manifest.activation.strategy, "loader_rename");
   assert.strictEqual(manifest.restart, "game_server");
   assert.deepStrictEqual([...manifest.compatibility.evejsVersions], ["261018.1", "261028.1", "261108.1", "261115.2"]);
+  // The third-party launcher rejects a descriptor whose description is over 1000
+  // characters ("Description must be bounded plain text").
+  assert.ok(manifest.description.length <= 1000, "description must stay within the launcher limit");
+  assert.strictEqual(manifest.updates.repository, "HalCyonNJ/EveJS-AutoSkyHookDeploy");
+  assert.strictEqual(manifest.updates.asset, "EveJS-AutoSkyHookDeploy-{version}.zip");
+  assert.strictEqual(manifest.launcherApi.version, 1);
+  assert.deepStrictEqual([...manifest.launcherApi.capabilities],
+    ["install", "verify", "prepare_profile", "prepare_disable", "prepare_remove", "recover"]);
 });
 
 test("a configuration problem installs no hooks at all", () => {

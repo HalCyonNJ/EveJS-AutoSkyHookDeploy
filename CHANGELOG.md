@@ -4,6 +4,18 @@ All notable changes to this mod are recorded here. One section per release; the
 version matches `MOD_VERSION` in `loader.js` and the version in
 `evejs-launcher.mod.json`.
 
+## 1.1.8 - 2026-11-17
+
+**Third-party launcher metadata: the package is accepted again, and it offers updates.**
+
+- The launcher validates `description` as plain text of at most 1000 characters;
+  1.1.7 shipped 2,972 and was reported as
+  `Description must be bounded plain text` (the mod could not be imported at
+  all). The description is now 982 characters; the long details stay in this
+  README and MANUAL.md.
+- No behaviour change and no payload changes beyond the manifest; the update,
+  settings and helper contracts are unchanged.
+
 ## 1.1.7 - 2026-11-17
 
 **Live fix: 261115.2 moved client slash commands behind `executeClientChatCommand`.**
