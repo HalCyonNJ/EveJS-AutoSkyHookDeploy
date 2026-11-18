@@ -4,6 +4,21 @@ All notable changes to this mod are recorded here. One section per release; the
 version matches `MOD_VERSION` in `loader.js` and the version in
 `evejs-launcher.mod.json`.
 
+## 1.1.9 - 2026-11-18
+
+**Live fix: the launcher helper spoke the wrong protocol.**
+
+- The launcher's helper protocol value is the string `evejs_launcher_mod_v1` and
+  its reply states are `ready`, `pending` and `failed`. 1.1.8 replied with the
+  integer `1` and used `error` for failures, so every helper action was rejected
+  with "The helper reply does not match this request and protocol." and the mod
+  could not be installed at all (the launcher asked for it to be removed).
+- The helper now answers with the exact protocol string and the three allowed
+  states. A test drives the real CLI (`node launcher/helper.js --request
+  <file> --result <file>`) and asserts the reply keys, protocol, request id and
+  state, so a drift in either constant fails the suite.
+- No gameplay change.
+
 ## 1.1.8 - 2026-11-17
 
 **Third-party launcher metadata: the package is accepted again, and it offers updates.**

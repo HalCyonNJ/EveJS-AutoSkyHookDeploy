@@ -2,7 +2,7 @@
   "schemaVersion": 3,
   "id": "autoSkyHookDeploy",
   "displayName": "Auto Skyhook Deploy",
-  "version": "1.1.8",
+  "version": "1.1.9",
   "description": "Conjures and removes Orbital Skyhooks (typeID 81080) on any planet of any solar system without an item or a ship. /ash anchor here|<systemID> deploys one Skyhook per free planet just past the planet's warp-in point (offsetMeters, default 25 km, adjustable with /ash offset) and reports the split; /ash remove <skyhookID> destroys one by id; /ash unanchor here|<systemID> destroys every Skyhook in a system; region and system scopes work a whole region (paced, abortable with /ash stop) or one system, skipping NPC space; /ash align moves existing Skyhooks onto the configured offset; /ash status reads the system back per planet; /ash help lists everything. Every subcommand also works as !ash in ordinary chat for characters without staff rights. A planet that already has a live or structure-shaped Skyhook, or a sovereignty ledger row for a real deployment, is never built on twice; a destroyed Skyhook keeps its tombstone and can be replaced. Server-side only; no client change.",
   "kind": "loader",
   "supportedBackends": [

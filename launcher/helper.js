@@ -1,31 +1,30 @@
 "use strict";
 
-// The EveJS Launcher's helper protocol, implemented for this mod.
+// The launcher's helper protocol (launcher 1.0.53+).
 //
 // The launcher runs this file as `node launcher/helper.js --request <json file>
 // --result <json file>`, handing over an envelope like
 //
-//   { protocol: 1, requestId: "...", action: "verify",
-//     runtime: { evejsRoot, clientRoot, backend, ... } }
+//   { protocol: "evejs_launcher_mod_v1", requestId: "...", action: "verify",
+//     mod: {...}, runtime: { evejsRoot, clientRoot, backend }, profile, settings }
 //
 // and reading back
 //
-//   { protocol, requestId, success, state, message,
+//   { protocol: "evejs_launcher_mod_v1", requestId, success, state, message,
 //     restartRequired: [], contributions: [], environment: {}, arguments: [] }
+//
+// `state` is one of ready / pending / failed. The protocol is this exact string;
+// an integer (1) makes the launcher report "The helper reply does not match this
+// request and protocol." and refuse the mod (ASH 1.1.8 did exactly that).
 //
 // Every action answers, always with the request id, and a failure is reported in
 // the result rather than thrown: a helper that throws leaves the launcher with no
 // answer at all.
-//
-// This mod is **server-side only**. It installs as an ordinary loader mod (the
-// launcher enables the manifest entry; there is no payload renaming and no vendor
-// file to patch), and it has no client component, so there is nothing to deliver to
-// a client and nothing to undo outside the mod folder.
 
 const fs = require("node:fs");
 const path = require("node:path");
 
-const PROTOCOL = 1;
+const PROTOCOL = "evejs_launcher_mod_v1";
 const ACTIONS = Object.freeze([
   "install",
   "verify",
@@ -75,7 +74,7 @@ function execute(request, features = process.env.EVEJS_LAUNCHER_HELPER_FEATURES 
   const action = String(envelope.action || "");
   try {
     if (!ACTIONS.includes(action)) {
-      const result = baseResult(envelope, "error", `unsupported helper action "${action}"`);
+      const result = baseResult(envelope, "failed", `unsupported helper action "${action}"`);
       result.success = false;
       return result;
     }
@@ -130,7 +129,7 @@ function execute(request, features = process.env.EVEJS_LAUNCHER_HELPER_FEATURES 
     return result;
   } catch (error) {
     // Last resort: answer, never throw.
-    const result = baseResult(envelope, "error", `helper failed: ${(error && error.message) || error}`);
+    const result = baseResult(envelope, "failed", `helper failed: ${(error && error.message) || error}`);
     result.success = false;
     return result;
   }

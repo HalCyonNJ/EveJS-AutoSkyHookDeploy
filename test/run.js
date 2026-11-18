@@ -2640,21 +2640,70 @@ test("launcher: settings.json is a configuration source between the env and the 
   }
 });
 
+test("launcher: the CLI helper writes a protocol-valid reply file", () => {
+  const { spawnSync } = require("node:child_process");
+  const dir = tmpdir("ashd-helper-cli-");
+  try {
+    const requestFile = path.join(dir, "request.json");
+    const resultFile = path.join(dir, "result.json");
+    const requestId = "6f0f7a5e-1b0a-4a0e-9d38-2b6b1f3f0d11";
+    fs.writeFileSync(requestFile, JSON.stringify({
+      protocol: "evejs_launcher_mod_v1",
+      requestId,
+      action: "install",
+      mod: { id: "autoSkyHookDeploy", version: "1.1.9", root: modDir, path: modDir },
+      runtime: { backend: "native", evejsRoot: modDir, clientRoot: null },
+      profile: null,
+      settings: {},
+    }));
+    const run = spawnSync(process.execPath, [
+      path.join(modDir, "launcher", "helper.js"),
+      "--request", requestFile,
+      "--result", resultFile,
+    ], { encoding: "utf8" });
+    assert.strictEqual(run.status, 0, run.stderr);
+    const reply = JSON.parse(fs.readFileSync(resultFile, "utf8"));
+    assert.deepStrictEqual(
+      Object.keys(reply).sort(),
+      ["arguments", "contributions", "environment", "message", "protocol",
+        "requestId", "restartRequired", "state", "success"],
+    );
+    assert.strictEqual(reply.protocol, "evejs_launcher_mod_v1");
+    assert.strictEqual(reply.requestId, requestId);
+    assert.strictEqual(reply.success, true);
+    assert.strictEqual(reply.state, "ready");
+    assert.deepStrictEqual(reply.restartRequired, []);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("launcher: the helper answers all six actions and never throws", () => {
   const helper = require(path.join(modDir, "launcher", "helper.js"));
   assert.deepStrictEqual(helper.ACTIONS, [
     "install", "verify", "prepare_profile", "prepare_disable", "prepare_remove", "recover",
   ]);
   const envelope = (action) => ({
-    protocol: 1,
+    protocol: "evejs_launcher_mod_v1",
     requestId: `req-${action}`,
     action,
     runtime: { evejsRoot: "R", clientRoot: "C", backend: "native" },
   });
+  const REQUIRED_REPLY_KEYS = [
+    "protocol", "requestId", "success", "state", "message",
+    "restartRequired", "contributions", "environment", "arguments",
+  ];
   for (const action of helper.ACTIONS) {
     const result = helper.execute(envelope(action), "client-script-delivery-v1", modDir);
-    assert.strictEqual(result.protocol, 1, action);
+    assert.strictEqual(result.protocol, "evejs_launcher_mod_v1", action);
     assert.strictEqual(result.requestId, `req-${action}`, action);
+    // The launcher rejects unknown reply fields and any state outside this set.
+    assert.deepStrictEqual(
+      Object.keys(result).filter((key) => !REQUIRED_REPLY_KEYS.includes(key)),
+      action === "prepare_profile" ? ["clientScriptDelivery"] : [],
+      action,
+    );
+    assert.ok(["ready", "pending", "failed"].includes(result.state), action);
     assert.strictEqual(result.success, true, action);
     assert.strictEqual(result.state, "ready", action);
     assert.strictEqual(typeof result.message, "string", action);
@@ -2685,7 +2734,7 @@ test("launcher: the helper answers all six actions and never throws", () => {
   // all answer with success:false instead of throwing.
   const unknown = helper.execute(envelope("frobnicate"), "", modDir);
   assert.strictEqual(unknown.success, false);
-  assert.strictEqual(unknown.state, "error");
+  assert.strictEqual(unknown.state, "failed");
   assert.strictEqual(unknown.requestId, "req-frobnicate");
   assert.match(unknown.message, /unsupported helper action/u);
   for (const bad of [null, undefined, {}, { requestId: "r" }, { action: 42 }]) {
@@ -2694,7 +2743,7 @@ test("launcher: the helper answers all six actions and never throws", () => {
       result = helper.execute(bad, "", modDir);
     });
     assert.strictEqual(result.success, false, JSON.stringify(bad));
-    assert.strictEqual(result.protocol, 1);
+    assert.strictEqual(result.protocol, "evejs_launcher_mod_v1");
   }
   // A mod root with no loader.js still answers, with version "unknown".
   const emptyRoot = tmpdir("ashd-helper-");
